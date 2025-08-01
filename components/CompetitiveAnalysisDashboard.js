@@ -257,65 +257,6 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
           'Content Strategy': 'Portfolio showcases, behind-the-scenes content',
           'Unique Selling Proposition': 'Cinematic storytelling with personal touch'
         }
-      },
-      'TV House Inc.': {
-        name: 'TV House Inc.',
-        tagline: 'Television and video solutions for the world-famous',
-        description: 'TV House Inc. provides innovative television and video production solutions, catering to both high-profile clients and emerging talents.',
-        elevatorPitch: 'TV House Inc. revolutionizes video production with cutting-edge technology and expertise, ensuring every client looks their best on screen, whether live or recorded.',
-        link: 'https://www.tvhouse.com',
-        marketPosition: 'High-end broadcast and video production',
-        estimatedRevenue: '$25M - $50M',
-        swot: {
-          Strengths: [
-            'Advanced broadcast-quality production capabilities',
-            'Experience with high-profile and celebrity clients',
-            'Cutting-edge technology and equipment',
-            'Professional broadcast industry relationships'
-          ],
-          Weaknesses: [
-            'Premium pricing limits market accessibility',
-            'Focus on high-end market may limit volume',
-            'Dependent on entertainment industry cycles'
-          ],
-          Opportunities: [
-            'Growing streaming and digital content demand',
-            'Corporate video and virtual event production',
-            'International expansion opportunities'
-          ],
-          Threats: [
-            'Disruption from new streaming technologies',
-            'Economic impacts on entertainment industry',
-            'Competition from lower-cost production alternatives'
-          ]
-        },
-        services: [
-          'Broadcast television production',
-          'High-end video production',
-          'Live streaming and webcasting',
-          'Post-production and editing',
-          'Studio rental and equipment services'
-        ],
-        target_audience: {
-          'Primary': 'Entertainment industry and high-profile brands',
-          'Secondary': 'Corporate clients seeking premium production',
-          'Decision Makers': 'Producers, brand managers, entertainment executives'
-        },
-        sentiment: {
-          'Overall Score': '4.4/5',
-          'Positive Themes': 'Professional quality, industry expertise, cutting-edge technology',
-          'Negative Themes': 'High cost, limited accessibility for smaller clients'
-        },
-        market: {
-          'Market Share': '5% of high-end video production market',
-          'Revenue Range': '$25M - $50M annually',
-          'Geographic Presence': 'Major entertainment markets (LA, NYC, Chicago)'
-        },
-        marketing: {
-          'Primary Channels': 'Industry relationships, trade publications, high-profile projects',
-          'Content Strategy': 'Showcase reels, celebrity testimonials, technical expertise',
-          'Unique Selling Proposition': 'Broadcast-quality production for world-famous clients'
-        }
       }
     }
   };
@@ -323,24 +264,603 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   // Use provided client data or default
   const currentClientData = clientData || defaultClientData;
 
-  // Rest of the component continues...
+  // Calculate scores based on available data
+  const calculateCompetitorScores = (competitor) => {
+    if (competitor === 'CLIENT') {
+      const data = currentClientData.clientProfile;
+      const marketScore = data.marketPosition.includes('specialist') ? 7 : 6;
+      const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
+      const serviceScore = Math.min(data.services.length * 1.5, 10);
+      const presenceScore = data.market['Geographic Presence'].includes('North America') ? 7 : 5;
+      
+      const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
+      
+      return {
+        overall,
+        breakdown: {
+          'Market Position': marketScore,
+          'Brand Strength': Math.round(sentimentScore * 10) / 10,
+          'Service Portfolio': Math.round(serviceScore * 10) / 10,
+          'Market Presence': presenceScore
+        }
+      };
+    }
+    
+    const data = currentClientData.allCompetitors[competitor];
+    if (!data) return { overall: 0, breakdown: {} };
+
+    const marketScore = data.marketPosition.includes('leader') || data.marketPosition.includes('Enterprise') ? 9 : 
+                       data.marketPosition.includes('specialist') ? 7 : 5;
+    const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
+    const serviceScore = Math.min(data.services.length * 1.5, 10);
+    const presenceScore = data.market['Geographic Presence'].includes('Global') ? 10 :
+                         data.market['Geographic Presence'].includes('North America') ? 7 : 5;
+
+    const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
+
+    return {
+      overall,
+      breakdown: {
+        'Market Position': marketScore,
+        'Brand Strength': Math.round(sentimentScore * 10) / 10,
+        'Service Portfolio': Math.round(serviceScore * 10) / 10,
+        'Market Presence': presenceScore
+      }
+    };
+  };
+
+  const getContextualInsights = (tab, competitor) => {
+    if (competitor === 'CLIENT') {
+      const data = currentClientData.clientProfile;
+      switch(tab) {
+        case 'swot':
+          return `Your key competitive advantage: ${data.swot.Strengths[0]}. Primary area for improvement: ${data.swot.Weaknesses[0]}.`;
+        case 'services':
+          return `You offer ${data.services.length} core services with specialization in association video production and revenue generation.`;
+        case 'audience':
+          return `Your primary target: ${data.target_audience.Primary}. Key decision makers: ${data.target_audience['Decision Makers']}.`;
+        case 'sentiment':
+          return `You maintain a ${data.sentiment['Overall Score']} rating. Your strongest perception: ${data.sentiment['Positive Themes']}.`;
+        case 'market':
+          return `Your market position: ${data.market['Market Share']}. Revenue scale: ${data.market['Revenue Range']}.`;
+        case 'marketing':
+          return `Your core channels: ${data.marketing['Primary Channels']}. Your key differentiator: ${data.marketing['Unique Selling Proposition']}.`;
+        default:
+          return `Your company specializes in ${currentClientData.industry} with focus on ${data.marketPosition.toLowerCase()}.`;
+      }
+    }
+    
+    const data = currentClientData.allCompetitors[competitor];
+    if (!data) return '';
+
+    switch(tab) {
+      case 'swot':
+        return `Key competitive advantage: ${data.swot.Strengths[0]}. Primary vulnerability: ${data.swot.Weaknesses[0]}.`;
+      case 'services':
+        return `${competitor} offers ${data.services.length} core services. Focus on ${data.marketPosition.toLowerCase()}.`;
+      case 'audience':
+        return `Primary target: ${data.target_audience.Primary}. Key decision makers: ${data.target_audience['Decision Makers']}.`;
+      case 'sentiment':
+        return `${competitor} maintains a ${data.sentiment['Overall Score']} rating. Strongest perception: ${data.sentiment['Positive Themes'].split(',')[0].trim()}.`;
+      case 'market':
+        return `Market position: ${data.market['Market Share']}. Revenue scale: ${data.market['Revenue Range']}.`;
+      case 'marketing':
+        return `Core channels: ${data.marketing['Primary Channels']}. Key differentiator: ${data.marketing['Unique Selling Proposition']}.`;
+      default:
+        return `${competitor} competes directly in ${currentClientData.industry} with focus on ${data.marketPosition.toLowerCase()}.`;
+    }
+  };
+
+  const selectedCompetitorData = selectedCompany === 'CLIENT' ? currentClientData.clientProfile : currentClientData.allCompetitors[selectedCompany];
+  const availableCompetitors = Object.keys(currentClientData.allCompetitors);
+
+  const getSWOTIcon = (category) => {
+    switch(category) {
+      case 'Strengths': return <TrendingUp className="w-5 h-5 text-green-600" />;
+      case 'Weaknesses': return <TrendingDown className="w-5 h-5 text-red-600" />;
+      case 'Opportunities': return <Target className="w-5 h-5 text-blue-600" />;
+      case 'Threats': return <Shield className="w-5 h-5 text-orange-600" />;
+      default: return <Eye className="w-5 h-5" />;
+    }
+  };
+
+  const getSWOTColor = (category) => {
+    switch(category) {
+      case 'Strengths': return 'border-green-200 bg-green-50';
+      case 'Weaknesses': return 'border-red-200 bg-red-50';
+      case 'Opportunities': return 'border-blue-200 bg-blue-50';
+      case 'Threats': return 'border-orange-200 bg-orange-50';
+      default: return 'border-gray-200 bg-gray-50';
+    }
+  };
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: Eye },
+    { id: 'swot', label: 'SWOT Analysis', icon: BarChart3 },
+    { id: 'services', label: 'Services', icon: Settings },
+    { id: 'audience', label: 'Target Audience', icon: Users },
+    { id: 'sentiment', label: 'Market Sentiment', icon: Heart },
+    { id: 'market', label: 'Market Position', icon: TrendingUpIcon },
+    { id: 'marketing', label: 'Marketing Strategy', icon: MessageSquare }
+  ];
+
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
-      <div className="text-center py-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Competitive Intelligence Platform</h1>
-        <p className="text-gray-600 mb-6">Dashboard loading successfully - Full functionality available when complete component is deployed</p>
-        <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold mb-4">Platform Features</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>✅ Client vs Competitor Analysis</div>
-            <div>✅ Interactive Scoring System</div>
-            <div>✅ SWOT Analysis</div>
-            <div>✅ Market Positioning</div>
-            <div>✅ CSV Data Processing</div>
-            <div>✅ Shareable Client Reports</div>
+      {/* Header with Client Branding */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
+              e3
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Competitive Intelligence Report</h1>
+              <p className="text-gray-600">Strategic analysis for {currentClientData.clientName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowCompetitorSelection(!showCompetitorSelection)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              Select Competitors
+            </button>
+            <button className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+              <Share2 className="w-4 h-4" />
+              Share Report
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Competitor Selection Modal */}
+      {showCompetitorSelection && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Select Competitors to Analyze</h3>
+            <p className="text-gray-600 mb-6">Choose up to 3 competitors for detailed analysis</p>
+            
+            <div className="space-y-3 mb-6">
+              {availableCompetitors.map((competitor) => {
+                const data = currentClientData.allCompetitors[competitor];
+                const scores = calculateCompetitorScores(competitor);
+                return (
+                  <div key={competitor} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={selectedCompetitors.includes(competitor)}
+                      onChange={(e) => {
+                        if (e.target.checked && selectedCompetitors.length < 3) {
+                          setSelectedCompetitors([...selectedCompetitors, competitor]);
+                        } else if (!e.target.checked) {
+                          setSelectedCompetitors(selectedCompetitors.filter(c => c !== competitor));
+                        }
+                      }}
+                      disabled={!selectedCompetitors.includes(competitor) && selectedCompetitors.length >= 3}
+                      className="w-4 h-4"
+                    />
+                    <div className="flex-1">
+                      <h4 className="font-semibold">{competitor}</h4>
+                      <p className="text-sm text-gray-600">{data.tagline}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Star className="w-4 h-4 text-yellow-500" />
+                        <span className="text-sm">Overall Score: {scores.overall}/10</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowCompetitorSelection(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowCompetitorSelection(false);
+                  if (selectedCompetitors.length > 0) {
+                    setSelectedCompany(selectedCompetitors[0]);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Apply Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Client vs Competitors Banner */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white p-6 rounded-xl mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">{currentClientData.clientName} vs. Competition</h2>
+            <p className="text-blue-100 mb-2">{currentClientData.tagline}</p>
+            <p className="text-blue-200">{currentClientData.industry} • Analysis Date: {currentClientData.analysisDate}</p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-blue-200">Analyzing</div>
+            <div className="text-lg font-semibold">{selectedCompetitors.length} Key Competitors</div>
+            <div className="text-sm text-blue-200">{selectedCompetitors.join(', ')}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Overview Scores - Only on Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Award className="w-5 h-5 text-yellow-600" />
+            Competitive Scores Overview
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Client Score Card */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-300 shadow-md">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <h4 className="font-semibold text-green-900">You - {currentClientData.clientName}</h4>
+              </div>
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-green-700">Overall Score</span>
+                  <span className="font-bold text-lg text-green-800">{calculateCompetitorScores('CLIENT').overall}/10</span>
+                </div>
+                <div className="w-full bg-green-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full" 
+                    style={{width: `${calculateCompetitorScores('CLIENT').overall * 10}%`}}
+                  ></div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {Object.entries(calculateCompetitorScores('CLIENT').breakdown).map(([metric, score]) => (
+                  <div key={metric} className="flex justify-between text-sm">
+                    <span className="text-green-700">{metric}</span>
+                    <span className="font-medium text-green-800">{score}/10</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Competitor Score Cards */}
+            {selectedCompetitors.map((competitor) => {
+              const scores = calculateCompetitorScores(competitor);
+              return (
+                <div key={competitor} className="bg-gray-50 p-4 rounded-lg border">
+                  <h4 className="font-semibold text-gray-900 mb-3">{competitor}</h4>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-600">Overall Score</span>
+                      <span className="font-bold text-lg">{scores.overall}/10</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full" 
+                        style={{width: `${scores.overall * 10}%`}}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(scores.breakdown).map(([metric, score]) => (
+                      <div key={metric} className="flex justify-between text-sm">
+                        <span className="text-gray-600">{metric}</span>
+                        <span className="font-medium">{score}/10</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Competitor Selector */}
+      {selectedCompetitors.length > 0 && (
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Building className="w-5 h-5 text-blue-600" />
+            Detailed Analysis
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Client Card */}
+            <button
+              onClick={() => setSelectedCompany('CLIENT')}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                selectedCompany === 'CLIENT'
+                  ? 'border-green-500 bg-green-50 shadow-md'
+                  : 'border-green-300 bg-green-50 hover:border-green-400 hover:shadow-sm'
+              }`}
+            >
+              <div className="text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <h3 className="font-semibold text-green-900">You</h3>
+                </div>
+                <h4 className="font-medium text-gray-900 mb-1">{currentClientData.clientName}</h4>
+                <p className="text-sm text-gray-600 mb-2">
+                  {currentClientData.tagline.substring(0, 50)}...
+                </p>
+                <div className="flex items-center gap-1">
+                  <Star className="w-4 h-4 text-yellow-500" />
+                  <span className="text-sm font-medium">{calculateCompetitorScores('CLIENT').overall}/10</span>
+                </div>
+              </div>
+            </button>
+            
+            {/* Competitor Cards */}
+            {selectedCompetitors.map((competitor) => (
+              <button
+                key={competitor}
+                onClick={() => setSelectedCompany(competitor)}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  selectedCompany === competitor
+                    ? 'border-blue-500 bg-blue-50 shadow-md'
+                    : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                }`}
+              >
+                <div className="text-left">
+                  <h3 className="font-semibold text-gray-900">{competitor}</h3>
+                  <p className="text-sm text-gray-600 mt-1 mb-2">
+                    {currentClientData.allCompetitors[competitor]?.tagline?.substring(0, 50) || 'Competitor analysis'}...
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-500" />
+                    <span className="text-sm font-medium">{calculateCompetitorScores(competitor).overall}/10</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab Navigation */}
+      {selectedCompetitorData && (
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
+          <div className="border-b border-gray-200">
+            <div className="flex overflow-x-auto">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-4 font-medium transition-all whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-6">
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-xl">
+                    <h3 className="text-2xl font-bold mb-2">{selectedCompetitorData.name}</h3>
+                    <p className="text-blue-100 mb-4">{selectedCompetitorData.tagline}</p>
+                    <a 
+                      href={selectedCompetitorData.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+                    >
+                      <Globe className="w-4 h-4" />
+                      Visit Website
+                    </a>
+                  </div>
+                  
+                  <div className="bg-gray-50 p-6 rounded-xl">
+                    <h4 className="font-semibold text-gray-900 mb-3">Company Description</h4>
+                    <p className="text-gray-700 leading-relaxed">{selectedCompetitorData.description}</p>
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-200">
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-green-600" />
+                    Elevator Pitch
+                  </h4>
+                  <p className="text-gray-800 text-lg leading-relaxed italic">"{selectedCompetitorData.elevatorPitch}"</p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'swot' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">SWOT Analysis: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Strategic assessment of strengths, weaknesses, opportunities, and threats</p>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {Object.entries(selectedCompetitorData.swot).map(([category, items]) => (
+                    <div key={category} className={`border-2 rounded-xl ${getSWOTColor(category)}`}>
+                      <button
+                        onClick={() => setExpandedSWOT(expandedSWOT === category ? '' : category)}
+                        className="w-full p-4 flex items-center justify-between hover:bg-opacity-70 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          {getSWOTIcon(category)}
+                          <h4 className="text-lg font-semibold text-gray-900">{category}</h4>
+                          <span className="bg-white px-2 py-1 rounded-full text-sm font-medium text-gray-600">
+                            {items.length}
+                          </span>
+                        </div>
+                        {expandedSWOT === category ? 
+                          <ChevronDown className="w-5 h-5 text-gray-600" /> : 
+                          <ChevronRight className="w-5 h-5 text-gray-600" />
+                        }
+                      </button>
+                      
+                      {expandedSWOT === category && (
+                        <div className="px-4 pb-4">
+                          <div className="space-y-3">
+                            {items.map((item, index) => (
+                              <div key={index} className="bg-white p-3 rounded-lg shadow-sm border">
+                                <p className="text-gray-800 leading-relaxed">{item}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'services' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Service Portfolio: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Core service offerings and capabilities</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedCompetitorData.services.map((service, index) => (
+                    <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                          {index + 1}
+                        </div>
+                        <h4 className="font-semibold text-gray-900">{service}</h4>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'audience' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Target Audience: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Key customer segments and decision makers</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {Object.entries(selectedCompetitorData.target_audience).map(([segment, description]) => (
+                    <div key={segment} className="bg-white p-6 rounded-xl shadow-lg border">
+                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <Users className="w-5 h-5 text-blue-600" />
+                        {segment}
+                      </h4>
+                      <p className="text-gray-700">{description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'sentiment' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Sentiment: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Customer perception and brand sentiment analysis</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-green-50 p-6 rounded-xl border border-green-200">
+                    <h4 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
+                      <Heart className="w-5 h-5 text-green-600" />
+                      Overall Score
+                    </h4>
+                    <div className="text-2xl font-bold text-green-800">{selectedCompetitorData.sentiment['Overall Score']}</div>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
+                    <h4 className="font-semibold text-blue-900 mb-3">Positive Themes</h4>
+                    <p className="text-blue-800">{selectedCompetitorData.sentiment['Positive Themes']}</p>
+                  </div>
+                  
+                  <div className="bg-orange-50 p-6 rounded-xl border border-orange-200">
+                    <h4 className="font-semibold text-orange-900 mb-3">Areas for Improvement</h4>
+                    <p className="text-orange-800">{selectedCompetitorData.sentiment['Negative Themes']}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'market' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Position: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Market share, revenue, and geographic presence</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {Object.entries(selectedCompetitorData.market).map(([metric, value]) => (
+                    <div key={metric} className="bg-white p-6 rounded-xl shadow-lg border">
+                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <TrendingUpIcon className="w-5 h-5 text-purple-600" />
+                        {metric}
+                      </h4>
+                      <p className="text-lg font-bold text-purple-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'marketing' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Marketing Strategy: {selectedCompetitorData.name}</h3>
+                  <p className="text-gray-600">Marketing channels, content strategy, and positioning</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-200">
+                    <h4 className="font-semibold text-purple-900 mb-3">Primary Channels</h4>
+                    <p className="text-purple-800">{selectedCompetitorData.marketing['Primary Channels']}</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
+                    <h4 className="font-semibold text-green-900 mb-3">Content Strategy</h4>
+                    <p className="text-green-800">{selectedCompetitorData.marketing['Content Strategy']}</p>
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-6 rounded-xl border border-blue-200">
+                  <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-blue-600" />
+                    Unique Selling Proposition
+                  </h4>
+                  <p className="text-blue-800 text-lg font-medium">"{selectedCompetitorData.marketing['Unique Selling Proposition']}"</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Contextual Strategic Insights */}
+      {selectedCompetitorData && (
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Target className="w-5 h-5 text-blue-600" />
+            Strategic Insights: {selectedCompany === 'CLIENT' ? 'Your ' : ''}{tabs.find(t => t.id === activeTab)?.label}
+          </h3>
+          <div className={`p-4 rounded-lg border ${selectedCompany === 'CLIENT' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+            <p className={`leading-relaxed ${selectedCompany === 'CLIENT' ? 'text-green-900' : 'text-blue-900'}`}>
+              {getContextualInsights(activeTab, selectedCompany)}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
