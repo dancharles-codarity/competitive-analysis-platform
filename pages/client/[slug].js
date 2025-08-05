@@ -188,13 +188,5 @@ export default function ClientReport() {
   );
 }
 
-// This enables dynamic routing for any client slug
-export async function getServerSideProps({ params }) {
-  const { slug } = params;
-  
-  return {
-    props: {
-      slug,
-    },
-  };
-}
+// Remove getServerSideProps to avoid client-side exceptions
+// Instead, handle all data fetching on the client side
