@@ -27,6 +27,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    // Validate file type
+    if (!csvFile.originalFilename?.endsWith('.csv') && csvFile.mimetype !== 'text/csv') {
+      return res.status(400).json({ error: 'Please upload a valid CSV file' });
+    }
+
     // Read and parse CSV file
     const csvContent = fs.readFileSync(csvFile.filepath, 'utf8');
     
@@ -36,39 +41,60 @@ export default async function handler(req, res) {
     // Clean up temp file
     fs.unlinkSync(csvFile.filepath);
 
+    // Generate a unique key for storing this data
+    const dataKey = `analysis-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     res.status(200).json({
       success: true,
       data: parsedData,
-      message: 'CSV file processed successfully'
+      dataKey,
+      message: 'CSV file processed successfully',
+      filename: csvFile.originalFilename
     });
 
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ 
       error: 'Failed to process CSV file',
-      details: error.message 
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 }
 
 function parseCompetitiveAnalysisCSV(csvContent) {
-  const lines = csvContent.split('\\n');
+  const lines = csvContent.split('\n').map(line => line.trim()).filter(line => line);
   const sections = {};
   let currentSection = null;
   let sectionLines = [];
 
   // Parse sections based on separator lines
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('───────────────')) {
+    const line = lines[i];
+    
+    // Check for separator lines
+    if (line.includes('───────────────') || line.match(/^-{5,}$/)) {
       // Save previous section
       if (currentSection && sectionLines.length > 0) {
         sections[currentSection] = sectionLines.slice();
       }
       sectionLines = [];
-    } else if (lines[i].trim().match(/^[A-Z\\s]+$/) && lines[i].trim().length > 3 && !lines[i].includes('COMPETELY')) {
-      currentSection = lines[i].trim();
-    } else if (currentSection && lines[i].trim()) {
-      sectionLines.push(lines[i]);
+      continue;
+    }
+    
+    // Check for section headers (all caps, significant length)
+    if (line.match(/^[A-Z\s&]+$/) && line.length > 3 && !line.includes('COMPETELY') && !line.includes('CSV')) {
+      // Save previous section
+      if (currentSection && sectionLines.length > 0) {
+        sections[currentSection] = sectionLines.slice();
+      }
+      currentSection = line.trim();
+      sectionLines = [];
+      continue;
+    }
+    
+    // Add content to current section
+    if (currentSection && line) {
+      sectionLines.push(line);
     }
   }
 
@@ -78,54 +104,92 @@ function parseCompetitiveAnalysisCSV(csvContent) {
   }
 
   // Parse each section into structured data
-  const structuredData = {};
+  const structuredData = {
+    sections: Object.keys(sections),
+    raw: sections
+  };
   
   // Parse OVERVIEW section to get company names
-  if (sections.OVERVIEW) {
-    const overviewCsv = sections.OVERVIEW.join('\\n');
-    const overviewData = Papa.parse(overviewCsv, {
-      header: true,
-      skipEmptyLines: true
-    });
+  if (sections.OVERVIEW || sections['COMPANY OVERVIEW']) {
+    const overviewSection = sections.OVERVIEW || sections['COMPANY OVERVIEW'];
+    const overviewCsv = overviewSection.join('\n');
     
-    const companies = overviewData.meta.fields.slice(1); // Remove 'Name' field
-    structuredData.companies = companies;
-    structuredData.clientName = companies[0]; // First company is the client
-    
-    // Structure overview data
-    structuredData.overview = {};
-    overviewData.data.forEach(row => {
-      if (row.Name) {
-        companies.forEach(company => {
-          if (!structuredData.overview[company]) {
-            structuredData.overview[company] = {};
+    try {
+      const overviewData = Papa.parse(overviewCsv, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: ','
+      });
+      
+      if (overviewData.data.length > 0 && overviewData.meta.fields) {
+        const companies = overviewData.meta.fields.filter(field => 
+          field && !field.toLowerCase().includes('name') && field.trim()
+        );
+        
+        structuredData.companies = companies;
+        structuredData.clientName = companies[0]; // First company is typically the client
+        
+        // Structure overview data
+        structuredData.overview = {};
+        overviewData.data.forEach(row => {
+          if (row.Name || row.name) {
+            const rowName = row.Name || row.name;
+            companies.forEach(company => {
+              if (!structuredData.overview[company]) {
+                structuredData.overview[company] = {};
+              }
+              structuredData.overview[company][rowName] = row[company] || '';
+            });
           }
-          structuredData.overview[company][row.Name] = row[company];
         });
       }
-    });
+    } catch (parseError) {
+      console.warn('Error parsing overview section:', parseError);
+      // Fallback: try to extract company names from header
+      const headerLine = overviewSection[0];
+      if (headerLine) {
+        const companies = headerLine.split(',').slice(1).map(c => c.trim());
+        structuredData.companies = companies;
+        structuredData.clientName = companies[0];
+      }
+    }
   }
 
   // Parse other sections (SWOT, SERVICES, etc.)
-  ['SWOT', 'SERVICES', 'AUDIENCE', 'SENTIMENT', 'MARKET', 'MARKETING'].forEach(sectionName => {
-    if (sections[sectionName]) {
-      const sectionCsv = sections[sectionName].join('\\n');
-      const sectionData = Papa.parse(sectionCsv, {
-        header: true,
-        skipEmptyLines: true
-      });
+  const sectionsToProcess = ['SWOT', 'SWOT ANALYSIS', 'SERVICES', 'SERVICE COMPARISON', 'AUDIENCE', 'TARGET AUDIENCE', 'SENTIMENT', 'MARKET', 'MARKETING'];
+  
+  sectionsToProcess.forEach(sectionName => {
+    const section = sections[sectionName];
+    if (section) {
+      const sectionCsv = section.join('\n');
+      const sectionKey = sectionName.toLowerCase().replace(/\s+/g, '_');
       
-      structuredData[sectionName.toLowerCase()] = {};
-      sectionData.data.forEach(row => {
-        if (row.Name && structuredData.companies) {
-          structuredData.companies.forEach(company => {
-            if (!structuredData[sectionName.toLowerCase()][company]) {
-              structuredData[sectionName.toLowerCase()][company] = {};
+      try {
+        const sectionData = Papa.parse(sectionCsv, {
+          header: true,
+          skipEmptyLines: true,
+          delimiter: ','
+        });
+        
+        structuredData[sectionKey] = {};
+        if (sectionData.data.length > 0 && structuredData.companies) {
+          sectionData.data.forEach(row => {
+            const rowName = row.Name || row.name || row.Category || row.category;
+            if (rowName) {
+              structuredData.companies.forEach(company => {
+                if (!structuredData[sectionKey][company]) {
+                  structuredData[sectionKey][company] = {};
+                }
+                structuredData[sectionKey][company][rowName] = row[company] || '';
+              });
             }
-            structuredData[sectionName.toLowerCase()][company][row.Name] = row[company];
           });
         }
-      });
+      } catch (parseError) {
+        console.warn(`Error parsing ${sectionName} section:`, parseError);
+        // Store raw data as fallback
+        structuredData[sectionKey + '_raw'] = section;
+      }
     }
   });
 
