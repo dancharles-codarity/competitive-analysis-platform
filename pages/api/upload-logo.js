@@ -30,10 +30,10 @@ export default async function handler(req, res) {
     }
 
     // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml'];
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(logoFile.mimetype)) {
       return res.status(400).json({ 
-        error: 'Invalid file type. Please upload JPG, PNG, or SVG files only.' 
+        error: 'Invalid file type. Please upload JPG, PNG, SVG, GIF, or WebP files only.' 
       });
     }
 
@@ -44,10 +44,19 @@ export default async function handler(req, res) {
     // Clean up temp file
     fs.unlinkSync(logoFile.filepath);
 
+    // Store in a way that persists (using client-side storage via response)
+    const logoData = {
+      clientName,
+      logoUrl: base64Logo,
+      timestamp: new Date().toISOString(),
+      filename: logoFile.originalFilename
+    };
+
     res.status(200).json({
       success: true,
-      logoUrl: base64Logo, // Return base64 data URL instead of file path
+      logoUrl: base64Logo,
       clientName,
+      logoData, // Include this for client-side storage
       message: 'Logo uploaded successfully'
     });
 
@@ -55,7 +64,7 @@ export default async function handler(req, res) {
     console.error('Logo upload error:', error);
     res.status(500).json({ 
       error: 'Failed to upload logo',
-      details: error.message 
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 }
