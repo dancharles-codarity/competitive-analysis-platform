@@ -1,7 +1,85 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import CompetitiveAnalysisDashboard from '../../components/CompetitiveAnalysisDashboard';
 import Head from 'next/head';
+
+// Simple fallback dashboard component in case the main one fails
+const SimpleClientDashboard = ({ clientName, clientData }) => {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Competitive Analysis Report
+          </h1>
+          <p className="text-xl text-gray-600">
+            {clientName}
+          </p>
+        </div>
+
+        {clientData ? (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-2xl font-semibold mb-4">Analysis Overview</h2>
+            
+            {clientData.companies && (
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-2">Companies Analyzed:</h3>
+                <div className="flex flex-wrap gap-2">
+                  {clientData.companies.map((company, index) => (
+                    <span 
+                      key={index}
+                      className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                    >
+                      {company}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {clientData.overview && (
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-2">Company Overview:</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(clientData.overview).map(([company, data]) => (
+                    <div key={company} className="bg-gray-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-gray-900 mb-2">{company}</h4>
+                      {Object.entries(data || {}).map(([key, value]) => (
+                        <p key={key} className="text-sm text-gray-600">
+                          <strong>{key}:</strong> {value}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="text-center mt-8">
+              <p className="text-gray-500 text-sm">
+                Report generated on {new Date().toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="text-4xl mb-4">📊</div>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              Sample Competitive Analysis Report
+            </h2>
+            <p className="text-gray-600 mb-6">
+              This is a sample report for {clientName}. Upload your competitive analysis data to see a personalized report.
+            </p>
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="text-blue-800 text-sm">
+                To create your personalized report, visit the main dashboard and upload your CSV data from tools like Competely.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function ClientReport() {
   const router = useRouter();
@@ -68,27 +146,6 @@ export default function ClientReport() {
         }
       }
 
-      // Handle different slug patterns and company matching
-      const slugVariants = [
-        clientSlug,
-        clientSlug.replace(/-/g, ' '),
-        clientSlug.replace(/-/g, '_'),
-        clientSlug.toLowerCase(),
-        clientSlug.toUpperCase(),
-        decodeURIComponent(clientSlug),
-        'e3 webcasting llc', // Default fallback
-        'e3-webcasting',
-        'e3-webcasting-llc'
-      ];
-
-      // Check if this matches any known patterns
-      const isE3Webcasting = slugVariants.some(variant => {
-        const normalized = variant.toLowerCase().replace(/[^a-z0-9]/g, '');
-        return normalized.includes('e3') || 
-               normalized.includes('webcasting') || 
-               normalized.includes('webcast');
-      });
-
       if (storedData) {
         // Use stored data - check if it has the expected structure
         if (storedData.data) {
@@ -99,11 +156,8 @@ export default function ClientReport() {
           console.warn('Stored data has unexpected structure:', storedData);
           setClientData(null); // Will use default data
         }
-      } else if (isE3Webcasting) {
-        // Use default e3 Webcasting data
-        setClientData(null); // null will use default data in dashboard
       } else {
-        // No data found, use default
+        // No data found, use null for default behavior
         console.warn(`No data found for client slug: ${clientSlug}`);
         setClientData(null);
       }
@@ -168,6 +222,16 @@ export default function ClientReport() {
     slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 
     'Client';
 
+  // Try to load the main dashboard component, but fall back to simple version if it fails
+  let DashboardComponent;
+  try {
+    const CompetitiveAnalysisDashboard = require('../../components/CompetitiveAnalysisDashboard').default;
+    DashboardComponent = CompetitiveAnalysisDashboard;
+  } catch (err) {
+    console.warn('Failed to load main dashboard component, using fallback:', err);
+    DashboardComponent = SimpleClientDashboard;
+  }
+
   return (
     <>
       <Head>
@@ -178,15 +242,13 @@ export default function ClientReport() {
       </Head>
       
       <main>
-        <CompetitiveAnalysisDashboard 
+        <DashboardComponent 
           clientData={clientData} 
           isClientView={true}
           clientSlug={slug}
+          clientName={clientName}
         />
       </main>
     </>
   );
 }
-
-// Remove getServerSideProps to avoid client-side exceptions
-// Instead, handle all data fetching on the client side
