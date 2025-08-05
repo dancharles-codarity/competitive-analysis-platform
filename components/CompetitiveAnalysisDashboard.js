@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, Shield, Eye, BarChart3, Users, MessageSquare, Globe, Zap, Heart, DollarSign, TrendingUpIcon, Building, Upload, Download, Share2, Settings, FileText, Award, Star, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, Shield, Eye, BarChart3, Users, MessageSquare, Globe, Zap, Heart, DollarSign, TrendingUpIcon, Building, Upload, Download, Share2, Settings, FileText, Award, Star, CheckCircle, X } from 'lucide-react';
+import CSVUploadModal from './CSVUploadModal';
+import ShareReportModal from './ShareReportModal';
 
 const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   const [selectedCompetitors, setSelectedCompetitors] = useState(['Cvent', 'Cadmium', 'Niche Visuals']);
@@ -7,6 +9,13 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedSWOT, setExpandedSWOT] = useState('Strengths');
   const [showCompetitorSelection, setShowCompetitorSelection] = useState(false);
+  
+  // New state for enhanced features
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [clientLogo, setClientLogo] = useState(null);
+  const [showLogoUpload, setShowLogoUpload] = useState(false);
+  const [currentData, setCurrentData] = useState(null);
 
   // Default client data (e3 Webcasting) - can be overridden by props
   const defaultClientData = {
@@ -261,17 +270,114 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     }
   };
 
-  // Use provided client data or default
-  const currentClientData = clientData || defaultClientData;
+  // Use provided client data, current uploaded data, or default
+  const finalClientData = currentData || clientData || defaultClientData;
+
+  // Handle CSV data upload
+  const handleDataUploaded = (uploadedData) => {
+    console.log('Processing uploaded data:', uploadedData);
+    
+    if (uploadedData.companies && uploadedData.clientName) {
+      const transformedData = {
+        clientName: uploadedData.clientName,
+        clientLogo: clientLogo,
+        industry: uploadedData.overview?.[uploadedData.clientName]?.Industry || 'Business Services',
+        analysisDate: new Date().toISOString().split('T')[0],
+        tagline: uploadedData.overview?.[uploadedData.clientName]?.Tagline || '',
+        description: uploadedData.overview?.[uploadedData.clientName]?.Description || '',
+        
+        clientProfile: {
+          name: uploadedData.clientName,
+          tagline: uploadedData.overview?.[uploadedData.clientName]?.Tagline || '',
+          description: uploadedData.overview?.[uploadedData.clientName]?.Description || '',
+          elevatorPitch: uploadedData.overview?.[uploadedData.clientName]?.['Elevator Pitch'] || '',
+          link: uploadedData.overview?.[uploadedData.clientName]?.Website || '',
+          marketPosition: uploadedData.overview?.[uploadedData.clientName]?.['Market Position'] || '',
+          estimatedRevenue: uploadedData.overview?.[uploadedData.clientName]?.Revenue || '',
+          swot: uploadedData.swot?.[uploadedData.clientName] || {
+            Strengths: [],
+            Weaknesses: [],
+            Opportunities: [],
+            Threats: []
+          },
+          services: Object.keys(uploadedData.services?.[uploadedData.clientName] || {}),
+          target_audience: uploadedData.audience?.[uploadedData.clientName] || {},
+          sentiment: uploadedData.sentiment?.[uploadedData.clientName] || {},
+          market: uploadedData.market?.[uploadedData.clientName] || {},
+          marketing: uploadedData.marketing?.[uploadedData.clientName] || {}
+        },
+        
+        allCompetitors: {}
+      };
+
+      // Transform competitor data
+      uploadedData.companies.forEach(company => {
+        if (company !== uploadedData.clientName) {
+          transformedData.allCompetitors[company] = {
+            name: company,
+            tagline: uploadedData.overview?.[company]?.Tagline || '',
+            description: uploadedData.overview?.[company]?.Description || '',
+            elevatorPitch: uploadedData.overview?.[company]?.['Elevator Pitch'] || '',
+            link: uploadedData.overview?.[company]?.Website || '',
+            marketPosition: uploadedData.overview?.[company]?.['Market Position'] || '',
+            estimatedRevenue: uploadedData.overview?.[company]?.Revenue || '',
+            swot: uploadedData.swot?.[company] || {
+              Strengths: [],
+              Weaknesses: [],
+              Opportunities: [],
+              Threats: []
+            },
+            services: Object.keys(uploadedData.services?.[company] || {}),
+            target_audience: uploadedData.audience?.[company] || {},
+            sentiment: uploadedData.sentiment?.[company] || {},
+            market: uploadedData.market?.[company] || {},
+            marketing: uploadedData.marketing?.[company] || {}
+          };
+        }
+      });
+
+      // Update current data and reset competitors selection
+      setCurrentData(transformedData);
+      setSelectedCompetitors(Object.keys(transformedData.allCompetitors).slice(0, 3));
+      setSelectedCompany(Object.keys(transformedData.allCompetitors)[0] || 'CLIENT');
+      
+      alert('CSV data loaded successfully! You can now select competitors and analyze.');
+    }
+  };
+
+  // Handle logo upload
+  const handleLogoUpload = async (file, clientName) => {
+    const formData = new FormData();
+    formData.append('logo', file);
+    formData.append('clientName', clientName);
+
+    try {
+      const response = await fetch('/api/upload-logo', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (response.ok) {
+        setClientLogo(result.logoUrl);
+        alert('Logo uploaded successfully!');
+      } else {
+        alert('Logo upload failed: ' + result.error);
+      }
+    } catch (error) {
+      alert('Logo upload failed: ' + error.message);
+    }
+  };
 
   // Calculate scores based on available data
   const calculateCompetitorScores = (competitor) => {
     if (competitor === 'CLIENT') {
-      const data = currentClientData.clientProfile;
+      const data = finalClientData.clientProfile;
       const marketScore = data.marketPosition.includes('specialist') ? 7 : 6;
       const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
       const serviceScore = Math.min(data.services.length * 1.5, 10);
-      const presenceScore = data.market['Geographic Presence'].includes('North America') ? 7 : 5;
+      const presenceScore = data.market['Geographic Presence']?.includes('North America') ? 7 : 5;
       
       const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
       
@@ -286,15 +392,15 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
       };
     }
     
-    const data = currentClientData.allCompetitors[competitor];
+    const data = finalClientData.allCompetitors[competitor];
     if (!data) return { overall: 0, breakdown: {} };
 
     const marketScore = data.marketPosition.includes('leader') || data.marketPosition.includes('Enterprise') ? 9 : 
                        data.marketPosition.includes('specialist') ? 7 : 5;
     const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
     const serviceScore = Math.min(data.services.length * 1.5, 10);
-    const presenceScore = data.market['Geographic Presence'].includes('Global') ? 10 :
-                         data.market['Geographic Presence'].includes('North America') ? 7 : 5;
+    const presenceScore = data.market['Geographic Presence']?.includes('Global') ? 10 :
+                         data.market['Geographic Presence']?.includes('North America') ? 7 : 5;
 
     const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
 
@@ -311,48 +417,48 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
 
   const getContextualInsights = (tab, competitor) => {
     if (competitor === 'CLIENT') {
-      const data = currentClientData.clientProfile;
+      const data = finalClientData.clientProfile;
       switch(tab) {
         case 'swot':
-          return `Your key competitive advantage: ${data.swot.Strengths[0]}. Primary area for improvement: ${data.swot.Weaknesses[0]}.`;
+          return `Your key competitive advantage: ${data.swot.Strengths[0] || 'Not available'}. Primary area for improvement: ${data.swot.Weaknesses[0] || 'Not available'}.`;
         case 'services':
-          return `You offer ${data.services.length} core services with specialization in association video production and revenue generation.`;
+          return `You offer ${data.services.length} core services with specialization in ${finalClientData.industry?.toLowerCase()}.`;
         case 'audience':
-          return `Your primary target: ${data.target_audience.Primary}. Key decision makers: ${data.target_audience['Decision Makers']}.`;
+          return `Your primary target: ${data.target_audience.Primary || 'Not specified'}. Key decision makers: ${data.target_audience['Decision Makers'] || 'Not specified'}.`;
         case 'sentiment':
-          return `You maintain a ${data.sentiment['Overall Score']} rating. Your strongest perception: ${data.sentiment['Positive Themes']}.`;
+          return `You maintain a ${data.sentiment['Overall Score'] || 'Not rated'} rating. Your strongest perception: ${data.sentiment['Positive Themes'] || 'Not available'}.`;
         case 'market':
-          return `Your market position: ${data.market['Market Share']}. Revenue scale: ${data.market['Revenue Range']}.`;
+          return `Your market position: ${data.market['Market Share'] || 'Not specified'}. Revenue scale: ${data.market['Revenue Range'] || 'Not specified'}.`;
         case 'marketing':
-          return `Your core channels: ${data.marketing['Primary Channels']}. Your key differentiator: ${data.marketing['Unique Selling Proposition']}.`;
+          return `Your core channels: ${data.marketing['Primary Channels'] || 'Not specified'}. Your key differentiator: ${data.marketing['Unique Selling Proposition'] || 'Not specified'}.`;
         default:
-          return `Your company specializes in ${currentClientData.industry} with focus on ${data.marketPosition.toLowerCase()}.`;
+          return `Your company specializes in ${finalClientData.industry} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
       }
     }
     
-    const data = currentClientData.allCompetitors[competitor];
+    const data = finalClientData.allCompetitors[competitor];
     if (!data) return '';
 
     switch(tab) {
       case 'swot':
-        return `Key competitive advantage: ${data.swot.Strengths[0]}. Primary vulnerability: ${data.swot.Weaknesses[0]}.`;
+        return `Key competitive advantage: ${data.swot.Strengths[0] || 'Not available'}. Primary vulnerability: ${data.swot.Weaknesses[0] || 'Not available'}.`;
       case 'services':
-        return `${competitor} offers ${data.services.length} core services. Focus on ${data.marketPosition.toLowerCase()}.`;
+        return `${competitor} offers ${data.services.length} core services. Focus on ${data.marketPosition?.toLowerCase() || 'market position'}.`;
       case 'audience':
-        return `Primary target: ${data.target_audience.Primary}. Key decision makers: ${data.target_audience['Decision Makers']}.`;
+        return `Primary target: ${data.target_audience.Primary || 'Not specified'}. Key decision makers: ${data.target_audience['Decision Makers'] || 'Not specified'}.`;
       case 'sentiment':
-        return `${competitor} maintains a ${data.sentiment['Overall Score']} rating. Strongest perception: ${data.sentiment['Positive Themes'].split(',')[0].trim()}.`;
+        return `${competitor} maintains a ${data.sentiment['Overall Score'] || 'Not rated'} rating. Strongest perception: ${data.sentiment['Positive Themes']?.split(',')[0]?.trim() || 'Not available'}.`;
       case 'market':
-        return `Market position: ${data.market['Market Share']}. Revenue scale: ${data.market['Revenue Range']}.`;
+        return `Market position: ${data.market['Market Share'] || 'Not specified'}. Revenue scale: ${data.market['Revenue Range'] || 'Not specified'}.`;
       case 'marketing':
-        return `Core channels: ${data.marketing['Primary Channels']}. Key differentiator: ${data.marketing['Unique Selling Proposition']}.`;
+        return `Core channels: ${data.marketing['Primary Channels'] || 'Not specified'}. Key differentiator: ${data.marketing['Unique Selling Proposition'] || 'Not specified'}.`;
       default:
-        return `${competitor} competes directly in ${currentClientData.industry} with focus on ${data.marketPosition.toLowerCase()}.`;
+        return `${competitor} competes directly in ${finalClientData.industry} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
     }
   };
 
-  const selectedCompetitorData = selectedCompany === 'CLIENT' ? currentClientData.clientProfile : currentClientData.allCompetitors[selectedCompany];
-  const availableCompetitors = Object.keys(currentClientData.allCompetitors);
+  const selectedCompetitorData = selectedCompany === 'CLIENT' ? finalClientData.clientProfile : finalClientData.allCompetitors[selectedCompany];
+  const availableCompetitors = Object.keys(finalClientData.allCompetitors);
 
   const getSWOTIcon = (category) => {
     switch(category) {
@@ -390,15 +496,35 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-              e3
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl overflow-hidden">
+              {clientLogo ? (
+                <img src={clientLogo} alt="Client Logo" className="w-full h-full object-contain" />
+              ) : (
+                'e3'
+              )}
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Competitive Intelligence Report</h1>
-              <p className="text-gray-600">Strategic analysis for {currentClientData.clientName}</p>
+              <p className="text-gray-600">Strategic analysis for {finalClientData.clientName}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              Upload CSV
+            </button>
+            
+            <button
+              onClick={() => setShowLogoUpload(true)}
+              className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Upload Logo
+            </button>
+            
             <button
               onClick={() => setShowCompetitorSelection(!showCompetitorSelection)}
               className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -406,13 +532,92 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
               <Settings className="w-4 h-4" />
               Select Competitors
             </button>
-            <button className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+            
+            <button 
+              onClick={() => setShowShareModal(true)}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
               <Share2 className="w-4 h-4" />
               Share Report
             </button>
           </div>
         </div>
       </div>
+
+      {/* CSV Upload Modal */}
+      <CSVUploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onDataUploaded={handleDataUploaded}
+      />
+
+      {/* Share Report Modal */}
+      <ShareReportModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        clientName={finalClientData.clientName}
+        reportData={{
+          competitors: selectedCompetitors,
+          analysisDate: finalClientData.analysisDate,
+          industry: finalClientData.industry
+        }}
+      />
+
+      {/* Logo Upload Modal */}
+      {showLogoUpload && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Upload Client Logo</h3>
+              <button onClick={() => setShowLogoUpload(false)}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Client Name</label>
+                <input
+                  type="text"
+                  placeholder="Enter client name"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  id="logoClientName"
+                  defaultValue={finalClientData.clientName}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Logo File</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  id="logoFile"
+                />
+              </div>
+              
+              <button
+                onClick={() => {
+                  const clientName = document.getElementById('logoClientName').value;
+                  const file = document.getElementById('logoFile').files[0];
+                  if (clientName && file) {
+                    handleLogoUpload(file, clientName);
+                    setShowLogoUpload(false);
+                  } else {
+                    alert('Please enter client name and select a logo file');
+                  }
+                }}
+                className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
+              >
+                Upload Logo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rest of the component remains the same as the original... */}
+      {/* I'll continue with the main content sections */}
 
       {/* Competitor Selection Modal */}
       {showCompetitorSelection && (
@@ -423,7 +628,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             
             <div className="space-y-3 mb-6">
               {availableCompetitors.map((competitor) => {
-                const data = currentClientData.allCompetitors[competitor];
+                const data = finalClientData.allCompetitors[competitor];
                 const scores = calculateCompetitorScores(competitor);
                 return (
                   <div key={competitor} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
@@ -480,9 +685,9 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
       <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white p-6 rounded-xl mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold mb-2">{currentClientData.clientName} vs. Competition</h2>
-            <p className="text-blue-100 mb-2">{currentClientData.tagline}</p>
-            <p className="text-blue-200">{currentClientData.industry} • Analysis Date: {currentClientData.analysisDate}</p>
+            <h2 className="text-2xl font-bold mb-2">{finalClientData.clientName} vs. Competition</h2>
+            <p className="text-blue-100 mb-2">{finalClientData.tagline}</p>
+            <p className="text-blue-200">{finalClientData.industry} • Analysis Date: {finalClientData.analysisDate}</p>
           </div>
           <div className="text-right">
             <div className="text-sm text-blue-200">Analyzing</div>
@@ -504,7 +709,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border-2 border-green-300 shadow-md">
               <div className="flex items-center gap-2 mb-2">
                 <CheckCircle className="w-5 h-5 text-green-600" />
-                <h4 className="font-semibold text-green-900">You - {currentClientData.clientName}</h4>
+                <h4 className="font-semibold text-green-900">You - {finalClientData.clientName}</h4>
               </div>
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
@@ -583,9 +788,9 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                   <CheckCircle className="w-4 h-4 text-green-600" />
                   <h3 className="font-semibold text-green-900">You</h3>
                 </div>
-                <h4 className="font-medium text-gray-900 mb-1">{currentClientData.clientName}</h4>
+                <h4 className="font-medium text-gray-900 mb-1">{finalClientData.clientName}</h4>
                 <p className="text-sm text-gray-600 mb-2">
-                  {currentClientData.tagline.substring(0, 50)}...
+                  {finalClientData.tagline.substring(0, 50)}...
                 </p>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-500" />
@@ -608,7 +813,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                 <div className="text-left">
                   <h3 className="font-semibold text-gray-900">{competitor}</h3>
                   <p className="text-sm text-gray-600 mt-1 mb-2">
-                    {currentClientData.allCompetitors[competitor]?.tagline?.substring(0, 50) || 'Competitor analysis'}...
+                    {finalClientData.allCompetitors[competitor]?.tagline?.substring(0, 50) || 'Competitor analysis'}...
                   </p>
                   <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 text-yellow-500" />
@@ -621,7 +826,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
         </div>
       )}
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation and Content */}
       {selectedCompetitorData && (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
           <div className="border-b border-gray-200">
@@ -651,15 +856,17 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                   <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-xl">
                     <h3 className="text-2xl font-bold mb-2">{selectedCompetitorData.name}</h3>
                     <p className="text-blue-100 mb-4">{selectedCompetitorData.tagline}</p>
-                    <a 
-                      href={selectedCompetitorData.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-                    >
-                      <Globe className="w-4 h-4" />
-                      Visit Website
-                    </a>
+                    {selectedCompetitorData.link && (
+                      <a 
+                        href={selectedCompetitorData.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+                      >
+                        <Globe className="w-4 h-4" />
+                        Visit Website
+                      </a>
+                    )}
                   </div>
                   
                   <div className="bg-gray-50 p-6 rounded-xl">
@@ -668,13 +875,15 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                   </div>
                 </div>
                 
-                <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-200">
-                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-green-600" />
-                    Elevator Pitch
-                  </h4>
-                  <p className="text-gray-800 text-lg leading-relaxed italic">"{selectedCompetitorData.elevatorPitch}"</p>
-                </div>
+                {selectedCompetitorData.elevatorPitch && (
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-200">
+                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-green-600" />
+                      Elevator Pitch
+                    </h4>
+                    <p className="text-gray-800 text-lg leading-relaxed italic">"{selectedCompetitorData.elevatorPitch}"</p>
+                  </div>
+                )}
               </div>
             )}
 
