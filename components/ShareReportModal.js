@@ -1,17 +1,29 @@
-import React, { useState } from 'react';
-import { Share2, Copy, Mail, Link2, X, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Share2, Copy, Mail, Link2, X, CheckCircle, Save, ExternalLink } from 'lucide-react';
 
 const ShareReportModal = ({ isOpen, onClose, clientName, reportData }) => {
   const [copied, setCopied] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [reportUrl, setReportUrl] = useState('');
 
   // Generate client slug from name
   const generateSlug = (name) => {
-    return name.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
+    if (!name) return 'client-report';
+    return name.toLowerCase()
+      .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except spaces
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single
+      .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
   };
 
   const clientSlug = generateSlug(clientName);
-  const reportUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/client/${clientSlug}`;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setReportUrl(`${window.location.origin}/client/${clientSlug}`);
+    }
+  }, [clientSlug]);
 
   const copyToClipboard = async () => {
     try {
@@ -22,6 +34,8 @@ const ShareReportModal = ({ isOpen, onClose, clientName, reportData }) => {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = reportUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
@@ -46,37 +60,63 @@ This report includes:
 • Service portfolio comparison
 • Strategic recommendations
 
+The report is interactive and optimized for both desktop and mobile viewing.
+
 Best regards`);
 
-    window.open(`mailto:?subject=${subject}&body=${body}`);
+    const mailtoUrl = `mailto:?subject=${subject}&body=${body}`;
+    window.open(mailtoUrl);
     setEmailSent(true);
     setTimeout(() => setEmailSent(false), 3000);
   };
 
   const saveReportData = async () => {
     try {
-      // Save report data to localStorage or send to API
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`report-${clientSlug}`, JSON.stringify({
+        const reportPayload = {
           clientName,
           slug: clientSlug,
           data: reportData,
           createdAt: new Date().toISOString(),
-          url: reportUrl
-        }));
+          url: reportUrl,
+          version: '1.0'
+        };
+
+        // Save with multiple keys for better retrieval
+        localStorage.setItem(`report-${clientSlug}`, JSON.stringify(reportPayload));
+        localStorage.setItem(`client-${clientSlug}`, JSON.stringify(reportPayload));
+        localStorage.setItem('latestReport', JSON.stringify(reportPayload));
+        
+        // Save a mapping of client names to slugs
+        const clientMapping = JSON.parse(localStorage.getItem('clientMapping') || '{}');
+        clientMapping[clientName] = clientSlug;
+        clientMapping[clientSlug] = clientName;
+        localStorage.setItem('clientMapping', JSON.stringify(clientMapping));
+
+        console.log('Report saved successfully:', reportPayload);
       }
       
-      alert('Report data saved successfully!');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (error) {
-      alert('Failed to save report data');
+      console.error('Failed to save report:', error);
+      alert('Failed to save report data. Please try again.');
     }
+  };
+
+  const previewReport = () => {
+    // Save the data first, then open the report
+    saveReportData();
+    setTimeout(() => {
+      window.open(reportUrl, '_blank');
+    }, 500);
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full p-6">
+      <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -85,19 +125,19 @@ Best regards`);
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Client Report URL */}
-        <div className="bg-blue-50 p-4 rounded-lg mb-6">
+        <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">
             Client Report URL
           </h3>
           <p className="text-gray-600 mb-3">
-            Share this personalized link with {clientName}
+            Share this personalized link with <strong>{clientName}</strong>
           </p>
           
           <div className="flex items-center gap-2 bg-white p-3 rounded-lg border">
@@ -152,41 +192,70 @@ Best regards`);
 
           <button
             onClick={saveReportData}
-            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className={`flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors ${
+              saved ? 'border-green-300 bg-green-50' : 'border-gray-200'
+            }`}
           >
-            <Link2 className="w-5 h-5 text-purple-600" />
+            <Save className={`w-5 h-5 ${saved ? 'text-green-600' : 'text-purple-600'}`} />
             <div className="text-left">
-              <h4 className="font-medium text-gray-900">Save Report Data</h4>
-              <p className="text-sm text-gray-600">Store report for future access</p>
+              <h4 className="font-medium text-gray-900">
+                {saved ? 'Report Saved!' : 'Save Report Data'}
+              </h4>
+              <p className="text-sm text-gray-600">
+                {saved ? 'Data stored successfully' : 'Store report for client access'}
+              </p>
             </div>
           </button>
         </div>
 
         {/* Report Preview */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-semibold text-gray-900 mb-2">Report Preview</h4>
-          <div className="text-sm text-gray-600 space-y-1">
-            <p>📊 Client: {clientName}</p>
-            <p>🎯 Competitors: {reportData?.competitors?.join(', ') || 'N/A'}</p>
-            <p>📅 Generated: {new Date().toLocaleDateString()}</p>
-            <p>🔗 URL: <code className="bg-white px-1 rounded">/client/{clientSlug}</code></p>
+        <div className="bg-gray-50 p-4 rounded-lg border mb-6">
+          <h4 className="font-semibold text-gray-900 mb-3">Report Summary</h4>
+          <div className="text-sm text-gray-600 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">📊 Client:</span> 
+              <span>{clientName}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">🎯 Companies:</span> 
+              <span>{reportData?.companies?.join(', ') || 'N/A'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">📅 Generated:</span> 
+              <span>{new Date().toLocaleDateString()}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">🔗 Slug:</span> 
+              <code className="bg-white px-2 py-1 rounded border">{clientSlug}</code>
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-between items-center">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
           >
             Close
           </button>
-          <button
-            onClick={() => window.open(reportUrl, '_blank')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            View Report
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={previewReport}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Preview Report
+            </button>
+          </div>
+        </div>
+
+        {/* Instructions */}
+        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800">
+            <strong>Note:</strong> Make sure to save the report data before sharing the URL with your client. 
+            The client will be able to access their personalized report at the generated URL.
+          </p>
         </div>
       </div>
     </div>
