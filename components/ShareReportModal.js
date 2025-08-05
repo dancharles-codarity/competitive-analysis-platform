@@ -86,12 +86,16 @@ Best regards`);
         };
 
         console.log('💾 Saving report data:', reportPayload);
+        console.log('🎯 Target slug:', clientSlug);
+        console.log('📊 Report data structure:', reportData);
 
         // Save with multiple keys for better retrieval
         const storageKeys = [
           `report-${clientSlug}`,
           `client-${clientSlug}`,
-          'latestReport'
+          `analysis-${clientSlug}`,
+          'latestReport',
+          'currentAnalysis'
         ];
 
         for (const key of storageKeys) {
@@ -105,6 +109,14 @@ Best regards`);
         clientMapping[clientSlug] = clientName;
         localStorage.setItem('clientMapping', JSON.stringify(clientMapping));
 
+        console.log('🗂️ Client mapping updated:', clientMapping);
+
+        // Also save the raw data directly for the current analysis context
+        if (reportData) {
+          localStorage.setItem('dashboardData', JSON.stringify(reportData));
+          console.log('📋 Dashboard data saved separately');
+        }
+
         console.log('✅ Report saved successfully');
         console.log('🔍 Verification - checking if data can be retrieved:');
         
@@ -113,10 +125,20 @@ Best regards`);
         if (verification) {
           const parsed = JSON.parse(verification);
           console.log('✅ Verification successful:', parsed);
+          
+          // Double check that the data structure is correct
+          if (parsed.data && (parsed.data.companies || parsed.data.overview)) {
+            console.log('✅ Data structure verified - contains companies/overview');
+          } else {
+            console.warn('⚠️ Data structure may be incomplete:', parsed.data);
+          }
         } else {
           console.error('❌ Verification failed - data not found');
           throw new Error('Data save verification failed');
         }
+
+        // Show all localStorage keys for debugging
+        console.log('🗄️ All localStorage keys after save:', Object.keys(localStorage));
       }
       
       setSaved(true);
@@ -130,12 +152,24 @@ Best regards`);
   const previewReport = () => {
     // Save the data first, then open the report
     console.log('🔗 Opening report preview...');
+    console.log('📍 Current URL will be:', reportUrl);
+    
+    // Automatically save first
     saveReportData();
+    
     setTimeout(() => {
       console.log('🚀 Opening URL:', reportUrl);
       window.open(reportUrl, '_blank');
-    }, 1000); // Give save operation time to complete
+    }, 1500); // Give save operation more time to complete
   };
+
+  // Auto-save when modal opens and we have data
+  useEffect(() => {
+    if (isOpen && reportData && clientName) {
+      console.log('🔄 Auto-saving report data on modal open...');
+      saveReportData();
+    }
+  }, [isOpen, reportData, clientName]);
 
   if (!isOpen) return null;
 
@@ -156,14 +190,24 @@ Best regards`);
           </button>
         </div>
 
-        {/* Debug Info */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <h4 className="text-sm font-semibold text-yellow-800 mb-1">Debug Info:</h4>
-            <p className="text-xs text-yellow-700">Slug: <code>{clientSlug}</code></p>
-            <p className="text-xs text-yellow-700">Data: {reportData ? 'Present' : 'Missing'}</p>
+        {/* Auto-save Status */}
+        {saved && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <p className="text-sm text-green-800">Report data saved automatically! Ready to share.</p>
           </div>
         )}
+
+        {/* Debug Info */}
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="text-sm font-semibold text-blue-800 mb-1">Report Info:</h4>
+          <p className="text-xs text-blue-700">Client: <strong>{clientName}</strong></p>
+          <p className="text-xs text-blue-700">Slug: <code>{clientSlug}</code></p>
+          <p className="text-xs text-blue-700">Data: {reportData ? '✅ Present' : '❌ Missing'}</p>
+          {reportData && reportData.companies && (
+            <p className="text-xs text-blue-700">Companies: {reportData.companies.join(', ')}</p>
+          )}
+        </div>
 
         {/* Client Report URL */}
         <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
@@ -233,19 +277,13 @@ Best regards`);
           </button>
 
           <button
-            onClick={saveReportData}
-            className={`flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors ${
-              saved ? 'border-green-300 bg-green-50' : 'border-gray-200'
-            }`}
+            onClick={previewReport}
+            className="flex items-center gap-3 p-4 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
           >
-            <Save className={`w-5 h-5 ${saved ? 'text-green-600' : 'text-purple-600'}`} />
+            <ExternalLink className="w-5 h-5 text-blue-600" />
             <div className="text-left">
-              <h4 className="font-medium text-gray-900">
-                {saved ? 'Report Saved!' : 'Save Report Data'}
-              </h4>
-              <p className="text-sm text-gray-600">
-                {saved ? 'Data stored successfully' : 'Store report for client access'}
-              </p>
+              <h4 className="font-medium text-gray-900">Preview Report</h4>
+              <p className="text-sm text-gray-600">Open report in new tab</p>
             </div>
           </button>
         </div>
@@ -267,8 +305,8 @@ Best regards`);
               <span>{new Date().toLocaleDateString()}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-medium">🔗 Slug:</span> 
-              <code className="bg-white px-2 py-1 rounded border">{clientSlug}</code>
+              <span className="font-medium">🔗 URL:</span> 
+              <code className="bg-white px-2 py-1 rounded border text-xs">{reportUrl}</code>
             </div>
           </div>
         </div>
@@ -281,22 +319,13 @@ Best regards`);
           >
             Close
           </button>
-          <div className="flex gap-3">
-            <button
-              onClick={previewReport}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Save & Preview Report
-            </button>
-          </div>
         </div>
 
         {/* Instructions */}
-        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm text-yellow-800">
-            <strong>Important:</strong> Click "Save & Preview Report" first to store the data, then share the URL with your client. 
-            The report link will only work after the data has been saved to your browser's storage.
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-sm text-green-800">
+            <strong>✅ Ready to Share:</strong> The report data has been automatically saved. 
+            You can now copy the URL above or click "Preview Report" to test it.
           </p>
         </div>
       </div>
