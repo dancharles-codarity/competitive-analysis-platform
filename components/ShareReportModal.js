@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, Copy, Mail, Link2, X, CheckCircle, Save, ExternalLink } from 'lucide-react';
+import { Share2, Copy, Mail, Link2, X, CheckCircle, Save, ExternalLink, AlertCircle } from 'lucide-react';
 
 const ShareReportModal = ({ isOpen, onClose, clientName, reportData }) => {
   const [copied, setCopied] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reportUrl, setReportUrl] = useState('');
+  const [saveError, setSaveError] = useState(null);
 
   // Generate client slug from name
   const generateSlug = (name) => {
@@ -72,6 +73,8 @@ Best regards`);
 
   const saveReportData = async () => {
     try {
+      setSaveError(null);
+      
       if (typeof window !== 'undefined') {
         const reportPayload = {
           clientName,
@@ -82,10 +85,19 @@ Best regards`);
           version: '1.0'
         };
 
+        console.log('💾 Saving report data:', reportPayload);
+
         // Save with multiple keys for better retrieval
-        localStorage.setItem(`report-${clientSlug}`, JSON.stringify(reportPayload));
-        localStorage.setItem(`client-${clientSlug}`, JSON.stringify(reportPayload));
-        localStorage.setItem('latestReport', JSON.stringify(reportPayload));
+        const storageKeys = [
+          `report-${clientSlug}`,
+          `client-${clientSlug}`,
+          'latestReport'
+        ];
+
+        for (const key of storageKeys) {
+          localStorage.setItem(key, JSON.stringify(reportPayload));
+          console.log(`✅ Saved with key: ${key}`);
+        }
         
         // Save a mapping of client names to slugs
         const clientMapping = JSON.parse(localStorage.getItem('clientMapping') || '{}');
@@ -93,23 +105,36 @@ Best regards`);
         clientMapping[clientSlug] = clientName;
         localStorage.setItem('clientMapping', JSON.stringify(clientMapping));
 
-        console.log('Report saved successfully:', reportPayload);
+        console.log('✅ Report saved successfully');
+        console.log('🔍 Verification - checking if data can be retrieved:');
+        
+        // Verify the save worked
+        const verification = localStorage.getItem(`report-${clientSlug}`);
+        if (verification) {
+          const parsed = JSON.parse(verification);
+          console.log('✅ Verification successful:', parsed);
+        } else {
+          console.error('❌ Verification failed - data not found');
+          throw new Error('Data save verification failed');
+        }
       }
       
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
-      console.error('Failed to save report:', error);
-      alert('Failed to save report data. Please try again.');
+      console.error('❌ Failed to save report:', error);
+      setSaveError(error.message);
     }
   };
 
   const previewReport = () => {
     // Save the data first, then open the report
+    console.log('🔗 Opening report preview...');
     saveReportData();
     setTimeout(() => {
+      console.log('🚀 Opening URL:', reportUrl);
       window.open(reportUrl, '_blank');
-    }, 500);
+    }, 1000); // Give save operation time to complete
   };
 
   if (!isOpen) return null;
@@ -130,6 +155,15 @@ Best regards`);
             <X className="w-6 h-6" />
           </button>
         </div>
+
+        {/* Debug Info */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h4 className="text-sm font-semibold text-yellow-800 mb-1">Debug Info:</h4>
+            <p className="text-xs text-yellow-700">Slug: <code>{clientSlug}</code></p>
+            <p className="text-xs text-yellow-700">Data: {reportData ? 'Present' : 'Missing'}</p>
+          </div>
+        )}
 
         {/* Client Report URL */}
         <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
@@ -170,6 +204,14 @@ Best regards`);
             </button>
           </div>
         </div>
+
+        {/* Save Error */}
+        {saveError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+            <p className="text-sm text-red-800">Save Error: {saveError}</p>
+          </div>
+        )}
 
         {/* Sharing Options */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -245,7 +287,7 @@ Best regards`);
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <ExternalLink className="w-4 h-4" />
-              Preview Report
+              Save & Preview Report
             </button>
           </div>
         </div>
@@ -253,8 +295,8 @@ Best regards`);
         {/* Instructions */}
         <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
           <p className="text-sm text-yellow-800">
-            <strong>Note:</strong> Make sure to save the report data before sharing the URL with your client. 
-            The client will be able to access their personalized report at the generated URL.
+            <strong>Important:</strong> Click "Save & Preview Report" first to store the data, then share the URL with your client. 
+            The report link will only work after the data has been saved to your browser's storage.
           </p>
         </div>
       </div>
