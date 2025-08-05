@@ -1,6 +1,5 @@
 import formidable from 'formidable';
 import fs from 'fs';
-import path from 'path';
 
 export const config = {
   api: {
@@ -14,22 +13,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ensure public/logos directory exists
-    const logoDir = path.join(process.cwd(), 'public', 'logos');
-    if (!fs.existsSync(logoDir)) {
-      fs.mkdirSync(logoDir, { recursive: true });
-    }
-
     const form = formidable({
-      uploadDir: logoDir,
-      keepExtensions: true,
       maxFileSize: 5 * 1024 * 1024, // 5MB limit
-      filename: (name, ext, part) => {
-        // Generate clean filename
-        const clientName = part.originalFilename.split('.')[0];
-        const cleanName = clientName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        return `${cleanName}${ext}`;
-      },
     });
 
     const [fields, files] = await form.parse(req);
@@ -47,19 +32,21 @@ export default async function handler(req, res) {
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml'];
     if (!allowedTypes.includes(logoFile.mimetype)) {
-      fs.unlinkSync(logoFile.filepath);
       return res.status(400).json({ 
         error: 'Invalid file type. Please upload JPG, PNG, or SVG files only.' 
       });
     }
 
-    // Get the final filename
-    const filename = path.basename(logoFile.filepath);
-    const logoUrl = `/logos/${filename}`;
+    // Read file and convert to base64 (works in Vercel)
+    const fileBuffer = fs.readFileSync(logoFile.filepath);
+    const base64Logo = `data:${logoFile.mimetype};base64,${fileBuffer.toString('base64')}`;
+
+    // Clean up temp file
+    fs.unlinkSync(logoFile.filepath);
 
     res.status(200).json({
       success: true,
-      logoUrl,
+      logoUrl: base64Logo, // Return base64 data URL instead of file path
       clientName,
       message: 'Logo uploaded successfully'
     });
