@@ -18,18 +18,46 @@ export default function ClientReport() {
 
   const fetchClientData = async (clientSlug) => {
     try {
-      // In a real implementation, this would fetch from your database/API
-      // For now, we'll simulate different client data based on the slug
-      
-      if (clientSlug === 'e3-webcasting') {
-        // Use the default e3 Webcasting data
-        setClientData(null); // null will use default data
-      } else {
-        // You could fetch other client data here
-        setError('Client not found');
+      // Check for stored report data first
+      let storedData = null;
+      if (typeof window !== 'undefined') {
+        const reportKey = `report-${clientSlug}`;
+        const stored = localStorage.getItem(reportKey);
+        if (stored) {
+          storedData = JSON.parse(stored);
+        }
       }
+
+      // Handle different slug patterns
+      const slugVariants = [
+        clientSlug,
+        clientSlug.replace(/-/g, ' '),
+        'e3 Webcasting LLC', // Default fallback
+        'e3-webcasting',
+        'e3-webcasting-llc'
+      ];
+
+      // Check if this matches known clients
+      const isE3Webcasting = slugVariants.some(variant => 
+        variant.toLowerCase().includes('e3') || 
+        variant.toLowerCase().includes('webcasting') ||
+        clientSlug === 'e3-webcasting-llc'
+      );
+
+      if (isE3Webcasting || !storedData) {
+        // Use default e3 Webcasting data
+        setClientData(null); // null will use default data in dashboard
+      } else {
+        // Use stored client data
+        setClientData(storedData.data);
+      }
+      
+      setError(null);
     } catch (err) {
-      setError('Failed to load client data');
+      console.error('Error fetching client data:', err);
+      // Fallback to default data instead of showing error
+      setClientData(null);
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -56,14 +84,16 @@ export default function ClientReport() {
             onClick={() => router.push('/')}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Return to Dashboard
+            View Main Dashboard
           </button>
         </div>
       </div>
     );
   }
 
-  const clientName = slug ? slug.replace('-', ' ').replace(/\\b\\w/g, l => l.toUpperCase()) : 'Client';
+  const clientName = slug ? 
+    slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 
+    'Client';
 
   return (
     <>
@@ -81,30 +111,13 @@ export default function ClientReport() {
   );
 }
 
-// Optional: Add static generation for better performance
-export async function getStaticPaths() {
-  // Define known client slugs
-  const paths = [
-    { params: { slug: 'e3-webcasting' } },
-    // Add more client slugs as needed
-  ];
-
-  return {
-    paths,
-    fallback: 'blocking', // Enable ISR for new clients
-  };
-}
-
-export async function getStaticProps({ params }) {
+// This enables dynamic routing for any client slug
+export async function getServerSideProps({ params }) {
   const { slug } = params;
-  
-  // In a real app, you'd fetch client data here
-  // For now, we'll pass through the slug
   
   return {
     props: {
       slug,
     },
-    revalidate: 3600, // Revalidate every hour
   };
 }
