@@ -75,74 +75,38 @@ Best regards`);
     try {
       setSaveError(null);
       
-      if (typeof window !== 'undefined') {
-        const reportPayload = {
-          clientName,
-          slug: clientSlug,
-          data: reportData,
-          createdAt: new Date().toISOString(),
-          url: reportUrl,
-          version: '1.0'
-        };
+      const reportPayload = {
+        clientName,
+        slug: clientSlug,
+        data: reportData,
+        createdAt: new Date().toISOString(),
+        url: reportUrl,
+        version: '1.0'
+      };
 
-        console.log('💾 Saving report data:', reportPayload);
-        console.log('🎯 Target slug:', clientSlug);
-        console.log('📊 Report data structure:', reportData);
+      console.log('💾 Saving report data to database:', reportPayload);
+      console.log('🎯 Target slug:', clientSlug);
 
-        // Save with multiple keys for better retrieval
-        const storageKeys = [
-          `report-${clientSlug}`,
-          `client-${clientSlug}`,
-          `analysis-${clientSlug}`,
-          'latestReport',
-          'currentAnalysis'
-        ];
+      // Save to Redis database via API
+      const response = await fetch(`/api/reports/${clientSlug}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(reportPayload)
+      });
 
-        for (const key of storageKeys) {
-          localStorage.setItem(key, JSON.stringify(reportPayload));
-          console.log(`✅ Saved with key: ${key}`);
-        }
-        
-        // Save a mapping of client names to slugs
-        const clientMapping = JSON.parse(localStorage.getItem('clientMapping') || '{}');
-        clientMapping[clientName] = clientSlug;
-        clientMapping[clientSlug] = clientName;
-        localStorage.setItem('clientMapping', JSON.stringify(clientMapping));
-
-        console.log('🗂️ Client mapping updated:', clientMapping);
-
-        // Also save the raw data directly for the current analysis context
-        if (reportData) {
-          localStorage.setItem('dashboardData', JSON.stringify(reportData));
-          console.log('📋 Dashboard data saved separately');
-        }
-
-        console.log('✅ Report saved successfully');
-        console.log('🔍 Verification - checking if data can be retrieved:');
-        
-        // Verify the save worked
-        const verification = localStorage.getItem(`report-${clientSlug}`);
-        if (verification) {
-          const parsed = JSON.parse(verification);
-          console.log('✅ Verification successful:', parsed);
-          
-          // Double check that the data structure is correct
-          if (parsed.data && (parsed.data.companies || parsed.data.overview)) {
-            console.log('✅ Data structure verified - contains companies/overview');
-          } else {
-            console.warn('⚠️ Data structure may be incomplete:', parsed.data);
-          }
-        } else {
-          console.error('❌ Verification failed - data not found');
-          throw new Error('Data save verification failed');
-        }
-
-        // Show all localStorage keys for debugging
-        console.log('🗄️ All localStorage keys after save:', Object.keys(localStorage));
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to save report: ${error}`);
       }
+
+      const result = await response.json();
+      console.log('✅ Report saved successfully to database:', result);
       
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      
     } catch (error) {
       console.error('❌ Failed to save report:', error);
       setSaveError(error.message);
@@ -160,7 +124,7 @@ Best regards`);
     setTimeout(() => {
       console.log('🚀 Opening URL:', reportUrl);
       window.open(reportUrl, '_blank');
-    }, 1500); // Give save operation more time to complete
+    }, 1500); // Give save operation time to complete
   };
 
   // Auto-save when modal opens and we have data
@@ -194,7 +158,7 @@ Best regards`);
         {saved && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-            <p className="text-sm text-green-800">Report data saved automatically! Ready to share.</p>
+            <p className="text-sm text-green-800">Report data saved to database! Ready to share.</p>
           </div>
         )}
 
@@ -324,7 +288,7 @@ Best regards`);
         {/* Instructions */}
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
           <p className="text-sm text-green-800">
-            <strong>✅ Ready to Share:</strong> The report data has been automatically saved. 
+            <strong>✅ Ready to Share:</strong> The report data has been automatically saved to the database. 
             You can now copy the URL above or click "Preview Report" to test it.
           </p>
         </div>
