@@ -16,64 +16,32 @@ const CSVUploadModal = ({ isOpen, onClose, onDataUploaded }) => {
     setUploadStatus(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      // Read the file content directly
+      const fileContent = await file.text();
+      
+      console.log('Processing CSV content directly in frontend...');
+      
+      // Pass the raw CSV content to the parent component
+      if (onDataUploaded) {
+        onDataUploaded({ csvContent: fileContent, filename: file.name });
+      }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      setUploadStatus({ 
+        type: 'success', 
+        message: 'CSV processed successfully!' 
       });
 
-      const result = await response.json();
+      // Auto-close after success
+      setTimeout(() => {
+        onClose();
+        setUploadStatus(null);
+      }, 2000);
 
-      if (response.ok) {
-        setUploadStatus({ 
-          type: 'success', 
-          message: 'CSV processed successfully!' 
-        });
-        
-        // Store the data in localStorage for persistence
-        if (result.data && typeof window !== 'undefined') {
-          const storageKey = result.dataKey || `analysis-${Date.now()}`;
-          localStorage.setItem(storageKey, JSON.stringify({
-            data: result.data,
-            filename: result.filename,
-            uploadedAt: new Date().toISOString(),
-            key: storageKey
-          }));
-          
-          // Also store as 'currentAnalysis' for easy access
-          localStorage.setItem('currentAnalysis', JSON.stringify({
-            data: result.data,
-            filename: result.filename,
-            uploadedAt: new Date().toISOString(),
-            key: storageKey
-          }));
-          
-          console.log('Data stored successfully:', result.data);
-        }
-        
-        // Pass the processed data back to parent component
-        if (onDataUploaded) {
-          onDataUploaded(result.data);
-        }
-
-        // Auto-close after success
-        setTimeout(() => {
-          onClose();
-          setUploadStatus(null);
-        }, 2000);
-      } else {
-        setUploadStatus({ 
-          type: 'error', 
-          message: result.error || 'Failed to process CSV file' 
-        });
-      }
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('File processing error:', error);
       setUploadStatus({ 
         type: 'error', 
-        message: 'Upload failed. Please check your connection and try again.' 
+        message: 'Failed to process CSV file. Please check the file format.' 
       });
     } finally {
       setUploading(false);
@@ -188,21 +156,21 @@ const CSVUploadModal = ({ isOpen, onClose, onDataUploaded }) => {
         <div className="mt-6 bg-gray-50 p-4 rounded-lg border">
           <div className="flex items-start gap-2 mb-3">
             <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-            <h4 className="font-semibold text-gray-900">Expected CSV Format:</h4>
+            <h4 className="font-semibold text-gray-900">Expected CSV Format (Competely):</h4>
           </div>
           <ul className="text-sm text-gray-600 space-y-1 ml-7">
             <li>• <strong>OVERVIEW</strong> section with company profiles and basic info</li>
             <li>• <strong>SWOT ANALYSIS</strong> section with strengths, weaknesses, opportunities, threats</li>
             <li>• <strong>SERVICES</strong> section with service offerings and features</li>
-            <li>• <strong>AUDIENCE</strong>, <strong>SENTIMENT</strong>, <strong>MARKET</strong>, <strong>MARKETING</strong> sections</li>
-            <li>• Sections separated by <code className="bg-gray-200 px-1 rounded">───────────────</code></li>
+            <li>• <strong>TARGET AUDIENCE</strong>, <strong>MARKET SENTIMENT</strong>, <strong>MARKET POSITION</strong>, <strong>MARKETING STRATEGY</strong> sections</li>
+            <li>• Sections separated by section headers</li>
             <li>• First column should be "Name" with row labels</li>
             <li>• Subsequent columns should be company names</li>
           </ul>
           
           <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
             <p className="text-sm text-blue-800">
-              <strong>Tip:</strong> Make sure your CSV export from Competely includes all sections and maintains the original formatting with section separators.
+              <strong>Tip:</strong> Make sure your CSV export from Competely includes all sections and maintains the original formatting. The first company column will be treated as your client data.
             </p>
           </div>
         </div>
