@@ -4,13 +4,17 @@ import CSVUploadModal from './CSVUploadModal';
 import ShareReportModal from './ShareReportModal';
 
 const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
-  const [selectedCompetitors, setSelectedCompetitors] = useState(['Cvent', 'Cadmium', 'Niche Visuals']);
-  const [selectedCompany, setSelectedCompany] = useState('Cvent');
+  // Check if this is a client report (should hide admin features)
+  const isClientReport = clientData?.isClientReport || false;
+  
+  // State management
+  const [selectedCompetitors, setSelectedCompetitors] = useState([]);
+  const [selectedCompany, setSelectedCompany] = useState('CLIENT');
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedSWOT, setExpandedSWOT] = useState('Strengths');
   const [showCompetitorSelection, setShowCompetitorSelection] = useState(false);
   
-  // New state for enhanced features
+  // Admin-only states (hidden in client mode)
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [clientLogo, setClientLogo] = useState(null);
@@ -270,11 +274,68 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     }
   };
 
-  // Use provided client data, current uploaded data, or default
-  const finalClientData = currentData || clientData || defaultClientData;
+  // FIXED: Better initialization and updating logic
+  useEffect(() => {
+    console.log('Client data changed:', clientData);
+    
+    // Use provided client data or default
+    const dataToUse = currentData || clientData || defaultClientData;
+    
+    // Set logo if provided
+    if (dataToUse?.clientLogo) {
+      setClientLogo(dataToUse.clientLogo);
+    }
+    
+    // Handle selected competitors properly
+    if (dataToUse?.selectedCompetitors && Array.isArray(dataToUse.selectedCompetitors)) {
+      console.log('Setting selected competitors:', dataToUse.selectedCompetitors);
+      
+      // Filter out any competitors that don't exist in allCompetitors
+      const validCompetitors = dataToUse.selectedCompetitors.filter(comp => 
+        dataToUse.allCompetitors && dataToUse.allCompetitors[comp]
+      );
+      
+      if (validCompetitors.length > 0) {
+        setSelectedCompetitors(validCompetitors);
+        setSelectedCompany(validCompetitors[0]);
+      } else {
+        // Fallback to available competitors if selected ones don't exist
+        const availableComps = Object.keys(dataToUse.allCompetitors || {});
+        const defaultSelected = availableComps.slice(0, 3);
+        setSelectedCompetitors(defaultSelected);
+        setSelectedCompany(defaultSelected[0] || 'CLIENT');
+      }
+    } else {
+      // No specific selection, use first available competitors
+      const availableComps = Object.keys(dataToUse.allCompetitors || {});
+      const defaultSelected = availableComps.slice(0, 3);
+      setSelectedCompetitors(defaultSelected);
+      setSelectedCompany(defaultSelected[0] || 'CLIENT');
+    }
+  }, [clientData, currentData]);
 
-  // Handle CSV data upload
+  // Use current data, provided client data, or default
+  const finalClientData = currentData || clientData || defaultClientData;
+  
+  // Get competitor data safely
+  const selectedCompetitorData = selectedCompany === 'CLIENT' 
+    ? finalClientData.clientProfile 
+    : finalClientData.allCompetitors?.[selectedCompany] || null;
+    
+  const availableCompetitors = Object.keys(finalClientData.allCompetitors || {});
+
+  console.log('Current state:', {
+    selectedCompetitors,
+    selectedCompany,
+    availableCompetitors,
+    hasCompetitorData: !!selectedCompetitorData,
+    isClientReport
+  });
+
+  // Handle CSV data upload (only available in admin mode)
   const handleDataUploaded = (uploadedData) => {
+    if (isClientReport) return; // Disable in client mode
+    
     console.log('Processing uploaded data:', uploadedData);
     
     if (uploadedData.companies && uploadedData.clientName) {
@@ -345,8 +406,10 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     }
   };
 
-  // Handle logo upload
+  // Handle logo upload (only available in admin mode)
   const handleLogoUpload = async (file, clientName) => {
+    if (isClientReport) return; // Disable in client mode
+    
     const formData = new FormData();
     formData.append('logo', file);
     formData.append('clientName', clientName);
@@ -457,9 +520,6 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     }
   };
 
-  const selectedCompetitorData = selectedCompany === 'CLIENT' ? finalClientData.clientProfile : finalClientData.allCompetitors[selectedCompany];
-  const availableCompetitors = Object.keys(finalClientData.allCompetitors);
-
   const getSWOTIcon = (category) => {
     switch(category) {
       case 'Strengths': return <TrendingUp className="w-5 h-5 text-green-600" />;
@@ -500,7 +560,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
               {clientLogo ? (
                 <img src={clientLogo} alt="Client Logo" className="w-full h-full object-contain" />
               ) : (
-                'e3'
+                finalClientData.clientName.substring(0, 2).toUpperCase()
               )}
             </div>
             <div>
@@ -508,177 +568,179 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
               <p className="text-gray-600">Strategic analysis for {finalClientData.clientName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Upload CSV
-            </button>
-            
-            <button
-              onClick={() => setShowLogoUpload(true)}
-              className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              Upload Logo
-            </button>
-            
-            <button
-              onClick={() => setShowCompetitorSelection(!showCompetitorSelection)}
-              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              Select Competitors
-            </button>
-            
-            <button 
-              onClick={() => setShowShareModal(true)}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              <Share2 className="w-4 h-4" />
-              Share Report
-            </button>
-          </div>
+          
+          {/* Only show admin buttons if NOT a client report */}
+          {!isClientReport && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Upload CSV
+              </button>
+              
+              <button
+                onClick={() => setShowLogoUpload(true)}
+                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                Upload Logo
+              </button>
+              
+              <button
+                onClick={() => setShowCompetitorSelection(!showCompetitorSelection)}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                Select Competitors
+              </button>
+              
+              <button 
+                onClick={() => setShowShareModal(true)}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                <Share2 className="w-4 h-4" />
+                Share Report
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* CSV Upload Modal */}
-      <CSVUploadModal
-        isOpen={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        onDataUploaded={handleDataUploaded}
-      />
+      {/* Only show modals if NOT a client report */}
+      {!isClientReport && (
+        <>
+          <CSVUploadModal
+            isOpen={showUploadModal}
+            onClose={() => setShowUploadModal(false)}
+            onDataUploaded={handleDataUploaded}
+          />
 
-      {/* Share Report Modal */}
-      <ShareReportModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        clientName={finalClientData.clientName}
-        reportData={{
-          competitors: selectedCompetitors,
-          analysisDate: finalClientData.analysisDate,
-          industry: finalClientData.industry
-        }}
-      />
+          <ShareReportModal
+            isOpen={showShareModal}
+            onClose={() => setShowShareModal(false)}
+            clientName={finalClientData.clientName}
+            reportData={{
+              competitors: selectedCompetitors,
+              analysisDate: finalClientData.analysisDate,
+              industry: finalClientData.industry
+            }}
+          />
 
-      {/* Logo Upload Modal */}
-      {showLogoUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Upload Client Logo</h3>
-              <button onClick={() => setShowLogoUpload(false)}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Client Name</label>
-                <input
-                  type="text"
-                  placeholder="Enter client name"
-                  className="w-full px-3 py-2 border rounded-lg"
-                  id="logoClientName"
-                  defaultValue={finalClientData.clientName}
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">Logo File</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="w-full px-3 py-2 border rounded-lg"
-                  id="logoFile"
-                />
-              </div>
-              
-              <button
-                onClick={() => {
-                  const clientName = document.getElementById('logoClientName').value;
-                  const file = document.getElementById('logoFile').files[0];
-                  if (clientName && file) {
-                    handleLogoUpload(file, clientName);
-                    setShowLogoUpload(false);
-                  } else {
-                    alert('Please enter client name and select a logo file');
-                  }
-                }}
-                className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
-              >
-                Upload Logo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Rest of the component remains the same as the original... */}
-      {/* I'll continue with the main content sections */}
-
-      {/* Competitor Selection Modal */}
-      {showCompetitorSelection && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Select Competitors to Analyze</h3>
-            <p className="text-gray-600 mb-6">Choose up to 3 competitors for detailed analysis</p>
-            
-            <div className="space-y-3 mb-6">
-              {availableCompetitors.map((competitor) => {
-                const data = finalClientData.allCompetitors[competitor];
-                const scores = calculateCompetitorScores(competitor);
-                return (
-                  <div key={competitor} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
+          {showLogoUpload && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold">Upload Client Logo</h3>
+                  <button onClick={() => setShowLogoUpload(false)}>
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Client Name</label>
                     <input
-                      type="checkbox"
-                      checked={selectedCompetitors.includes(competitor)}
-                      onChange={(e) => {
-                        if (e.target.checked && selectedCompetitors.length < 3) {
-                          setSelectedCompetitors([...selectedCompetitors, competitor]);
-                        } else if (!e.target.checked) {
-                          setSelectedCompetitors(selectedCompetitors.filter(c => c !== competitor));
-                        }
-                      }}
-                      disabled={!selectedCompetitors.includes(competitor) && selectedCompetitors.length >= 3}
-                      className="w-4 h-4"
+                      type="text"
+                      placeholder="Enter client name"
+                      className="w-full px-3 py-2 border rounded-lg"
+                      id="logoClientName"
+                      defaultValue={finalClientData.clientName}
                     />
-                    <div className="flex-1">
-                      <h4 className="font-semibold">{competitor}</h4>
-                      <p className="text-sm text-gray-600">{data.tagline}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Star className="w-4 h-4 text-yellow-500" />
-                        <span className="text-sm">Overall Score: {scores.overall}/10</span>
-                      </div>
-                    </div>
                   </div>
-                );
-              })}
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Logo File</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="w-full px-3 py-2 border rounded-lg"
+                      id="logoFile"
+                    />
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      const clientName = document.getElementById('logoClientName').value;
+                      const file = document.getElementById('logoFile').files[0];
+                      if (clientName && file) {
+                        handleLogoUpload(file, clientName);
+                        setShowLogoUpload(false);
+                      } else {
+                        alert('Please enter client name and select a logo file');
+                      }
+                    }}
+                    className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
+                  >
+                    Upload Logo
+                  </button>
+                </div>
+              </div>
             </div>
-            
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowCompetitorSelection(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowCompetitorSelection(false);
-                  if (selectedCompetitors.length > 0) {
-                    setSelectedCompany(selectedCompetitors[0]);
-                  }
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Apply Selection
-              </button>
+          )}
+
+          {showCompetitorSelection && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+              <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4">
+                <h3 className="text-xl font-bold mb-4">Select Competitors to Analyze</h3>
+                <p className="text-gray-600 mb-6">Choose up to 3 competitors for detailed analysis</p>
+                
+                <div className="space-y-3 mb-6">
+                  {availableCompetitors.map((competitor) => {
+                    const data = finalClientData.allCompetitors[competitor];
+                    const scores = calculateCompetitorScores(competitor);
+                    return (
+                      <div key={competitor} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={selectedCompetitors.includes(competitor)}
+                          onChange={(e) => {
+                            if (e.target.checked && selectedCompetitors.length < 3) {
+                              setSelectedCompetitors([...selectedCompetitors, competitor]);
+                            } else if (!e.target.checked) {
+                              setSelectedCompetitors(selectedCompetitors.filter(c => c !== competitor));
+                            }
+                          }}
+                          disabled={!selectedCompetitors.includes(competitor) && selectedCompetitors.length >= 3}
+                          className="w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <h4 className="font-semibold">{competitor}</h4>
+                          <p className="text-sm text-gray-600">{data.tagline}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Star className="w-4 h-4 text-yellow-500" />
+                            <span className="text-sm">Overall Score: {scores.overall}/10</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowCompetitorSelection(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowCompetitorSelection(false);
+                      if (selectedCompetitors.length > 0) {
+                        setSelectedCompany(selectedCompetitors[0]);
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Apply Selection
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {/* Client vs Competitors Banner */}
