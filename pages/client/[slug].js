@@ -66,22 +66,31 @@ export default function ClientReport() {
     const clientName = reportData.clientName;
     const data = reportData.data;
     
+    // Get the actual competitors from the stored data - these are the ones that were selected
+    const selectedCompetitors = data.competitors || [];
+    
+    console.log('Original stored data:', data);
+    console.log('Selected competitors from data:', selectedCompetitors);
+    
     // Create a structure similar to what CompetitiveAnalysisDashboard expects
     return {
       clientName: clientName,
-      clientLogo: null,
-      clientWebsite: '',
+      clientLogo: reportData.clientLogo || data.clientLogo || null, // Check both locations for logo
+      clientWebsite: data.clientWebsite || '',
       industry: data.industry || 'Business Services',
       analysisDate: data.analysisDate || reportData.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
       tagline: `Competitive Analysis for ${clientName}`,
       description: `Comprehensive competitive intelligence analysis for ${clientName} in the ${data.industry || 'business services'} sector.`,
       
+      // Pass the selected competitors so the dashboard knows which ones to show
+      selectedCompetitors: selectedCompetitors,
+      
       clientProfile: {
         name: clientName,
         tagline: `${clientName} - Market Analysis`,
         description: `A comprehensive analysis of ${clientName} and its competitive landscape in ${data.industry || 'business services'}.`,
-        elevatorPitch: `${clientName} operates in the competitive ${data.industry || 'business services'} market alongside key players including ${(data.competitors || []).join(', ')}.`,
-        link: '',
+        elevatorPitch: `${clientName} operates in the competitive ${data.industry || 'business services'} market alongside key players including ${selectedCompetitors.join(', ')}.`,
+        link: data.clientWebsite || '',
         marketPosition: 'Market participant under analysis',
         estimatedRevenue: 'Analysis in progress',
         swot: {
@@ -133,7 +142,8 @@ export default function ClientReport() {
         }
       },
       
-      allCompetitors: (data.competitors || []).reduce((acc, competitor, index) => {
+      // Only include the selected competitors in allCompetitors
+      allCompetitors: selectedCompetitors.reduce((acc, competitor, index) => {
         acc[competitor] = {
           name: competitor,
           tagline: `${competitor} - Competitive Analysis`,
@@ -193,7 +203,10 @@ export default function ClientReport() {
           }
         };
         return acc;
-      }, {})
+      }, {}),
+      
+      // Mark this as a client report so the dashboard knows to hide admin features
+      isClientReport: true
     };
   };
 
@@ -312,7 +325,7 @@ export default function ClientReport() {
             </p>
             <p className="text-gray-400 text-sm mt-1">
               Generated on {new Date(clientData.analysisDate).toLocaleDateString()} • 
-              Analyzing {Object.keys(clientData.allCompetitors).length} competitors
+              Analyzing {Object.keys(clientData.allCompetitors).length} competitors: {Object.keys(clientData.allCompetitors).join(', ')}
             </p>
           </div>
         </div>
