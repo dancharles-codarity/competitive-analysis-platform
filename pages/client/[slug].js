@@ -150,79 +150,27 @@ export default function ClientReport() {
     try {
       setLoading(true);
       
-      // Check for stored report data
-      let storedData = null;
-      if (typeof window !== 'undefined') {
-        console.log('Checking localStorage for data...');
+      // Fetch from database via API
+      const response = await fetch(`/api/reports/${clientSlug}`);
+      
+      if (response.ok) {
+        const reportData = await response.json();
+        console.log('✅ Retrieved report data from database:', reportData);
         
-        // Try multiple storage keys
-        const storageKeys = [
-          `report-${clientSlug}`,
-          `analysis-${clientSlug}`,
-          `client-${clientSlug}`,
-          'latestReport',
-          'currentAnalysis'
-        ];
-        
-        console.log('Trying storage keys:', storageKeys);
-        
-        for (const key of storageKeys) {
-          const stored = localStorage.getItem(key);
-          if (stored) {
-            try {
-              storedData = JSON.parse(stored);
-              console.log(`✅ Found data with key: ${key}`, storedData);
-              break;
-            } catch (e) {
-              console.warn(`❌ Invalid JSON in storage key ${key}:`, e);
-            }
-          }
-        }
-        
-        // Also check for any keys that contain the slug
-        const allKeys = Object.keys(localStorage);
-        console.log('All localStorage keys:', allKeys);
-        
-        const matchingKeys = allKeys.filter(key => 
-          key.toLowerCase().includes(clientSlug.toLowerCase()) ||
-          clientSlug.toLowerCase().includes(key.replace(/[^a-z0-9]/gi, '').toLowerCase())
-        );
-        
-        console.log('Matching keys found:', matchingKeys);
-        
-        if (matchingKeys.length > 0 && !storedData) {
-          for (const key of matchingKeys) {
-            try {
-              const stored = localStorage.getItem(key);
-              if (stored) {
-                storedData = JSON.parse(stored);
-                console.log(`✅ Found data with matching key: ${key}`, storedData);
-                break;
-              }
-            } catch (e) {
-              console.warn(`❌ Invalid JSON in matching key ${key}:`, e);
-            }
-          }
-        }
-      }
-
-      // Process the stored data
-      if (storedData) {
-        console.log('Processing stored data:', storedData);
-        
-        if (storedData.data) {
-          console.log('Using storedData.data');
-          setClientData(storedData.data);
-        } else if (storedData.companies || storedData.overview) {
-          console.log('Using storedData directly');
-          setClientData(storedData);
+        // Use the data field from the stored report
+        if (reportData.data) {
+          console.log('Using reportData.data:', reportData.data);
+          setClientData(reportData.data);
         } else {
-          console.warn('Stored data has unexpected structure:', storedData);
-          setClientData(null);
+          // If data structure is different, try to use it directly
+          console.log('Using reportData directly:', reportData);
+          setClientData(reportData);
         }
-      } else {
-        console.log('No stored data found, using null');
+      } else if (response.status === 404) {
+        console.log('❌ No report found in database, showing demo');
         setClientData(null);
+      } else {
+        throw new Error(`Failed to fetch report: ${response.statusText}`);
       }
       
       setError(null);
@@ -251,6 +199,7 @@ export default function ClientReport() {
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading competitive analysis report...</p>
           <p className="text-sm text-gray-500 mt-2">Client: {clientName}</p>
+          <p className="text-xs text-gray-400 mt-1">Fetching from database...</p>
         </div>
       </div>
     );
@@ -282,6 +231,7 @@ export default function ClientReport() {
           </div>
           <div className="mt-6 text-sm text-gray-500">
             <p>Debug info: slug = <code className="bg-gray-100 px-2 py-1 rounded">{slug}</code></p>
+            <p className="text-xs mt-1">Checking Redis database...</p>
           </div>
         </div>
       </div>
