@@ -24,11 +24,12 @@ const ClientReportDashboard = ({ clientName, clientData }) => {
           
           {clientData ? (
             <div className="space-y-6">
-              {clientData.companies && (
+              {/* Handle both 'companies' and 'competitors' fields */}
+              {(clientData.companies || clientData.competitors) && (
                 <div>
                   <h3 className="text-lg font-medium mb-3">Companies Analyzed:</h3>
                   <div className="flex flex-wrap gap-2">
-                    {clientData.companies.map((company, index) => (
+                    {(clientData.companies || clientData.competitors).map((company, index) => (
                       <span 
                         key={index}
                         className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
@@ -40,6 +41,27 @@ const ClientReportDashboard = ({ clientName, clientData }) => {
                 </div>
               )}
 
+              {/* Industry Information */}
+              {clientData.industry && (
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Industry:</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-gray-800 font-medium">{clientData.industry}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Analysis Date */}
+              {clientData.analysisDate && (
+                <div>
+                  <h3 className="text-lg font-medium mb-3">Analysis Date:</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-gray-800">{new Date(clientData.analysisDate).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Company Overview - if available */}
               {clientData.overview && (
                 <div>
                   <h3 className="text-lg font-medium mb-3">Company Overview:</h3>
@@ -62,6 +84,7 @@ const ClientReportDashboard = ({ clientName, clientData }) => {
                 </div>
               )}
 
+              {/* SWOT Analysis - if available */}
               {clientData.swot && (
                 <div>
                   <h3 className="text-lg font-medium mb-3">SWOT Analysis Available</h3>
@@ -69,12 +92,28 @@ const ClientReportDashboard = ({ clientName, clientData }) => {
                 </div>
               )}
 
+              {/* Services - if available */}
               {clientData.services && (
                 <div>
                   <h3 className="text-lg font-medium mb-3">Services Comparison Available</h3>
                   <p className="text-gray-600">Service comparison data has been processed for analysis.</p>
                 </div>
               )}
+
+              {/* Show all available data fields for debugging */}
+              <div>
+                <h3 className="text-lg font-medium mb-3">Analysis Data Available:</h3>
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                    {Object.keys(clientData).map(key => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-green-600">✓</span>
+                        <span className="text-blue-800 font-medium">{key}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8">
@@ -160,6 +199,7 @@ export default function ClientReport() {
         // Use the data field from the stored report
         if (reportData.data) {
           console.log('Using reportData.data:', reportData.data);
+          console.log('Data fields available:', Object.keys(reportData.data));
           setClientData(reportData.data);
         } else {
           // If data structure is different, try to use it directly
