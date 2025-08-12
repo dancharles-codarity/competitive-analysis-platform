@@ -79,6 +79,9 @@ Best regards`);
         clientName,
         slug: clientSlug,
         data: reportData,
+        // Include the complete competitive analysis data
+        fullCompetitiveData: reportData.fullData,
+        clientLogo: reportData.clientLogo,
         createdAt: new Date().toISOString(),
         url: reportUrl,
         version: '1.0'

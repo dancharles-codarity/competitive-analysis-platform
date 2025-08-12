@@ -63,26 +63,40 @@ export default function ClientReport() {
 
   // Transform the stored report data into the format expected by CompetitiveAnalysisDashboard
   const transformToCompetitiveData = (reportData) => {
+    console.log('Full report data received:', reportData);
+    
+    // Check if we have the full competitive data from Competely CSV
+    if (reportData.fullCompetitiveData) {
+      console.log('✅ Using full competitive data from Competely CSV');
+      const fullData = reportData.fullCompetitiveData;
+      
+      return {
+        ...fullData,
+        // Override the client logo if we have one saved
+        clientLogo: reportData.clientLogo || fullData.clientLogo,
+        // Ensure selected competitors are set correctly
+        selectedCompetitors: reportData.data?.competitors || Object.keys(fullData.allCompetitors || {}),
+        // Mark this as a client report so admin features are hidden
+        isClientReport: true
+      };
+    }
+    
+    // Fallback to basic data structure if full data not available
     const clientName = reportData.clientName;
     const data = reportData.data;
-    
-    // Get the actual competitors from the stored data - these are the ones that were selected
     const selectedCompetitors = data.competitors || [];
     
-    console.log('Original stored data:', data);
+    console.log('⚠️  Using fallback demo data structure');
     console.log('Selected competitors from data:', selectedCompetitors);
     
-    // Create a structure similar to what CompetitiveAnalysisDashboard expects
     return {
       clientName: clientName,
-      clientLogo: reportData.clientLogo || data.clientLogo || null, // Check both locations for logo
+      clientLogo: reportData.clientLogo || data.clientLogo || null,
       clientWebsite: data.clientWebsite || '',
       industry: data.industry || 'Business Services',
       analysisDate: data.analysisDate || reportData.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
       tagline: `Competitive Analysis for ${clientName}`,
       description: `Comprehensive competitive intelligence analysis for ${clientName} in the ${data.industry || 'business services'} sector.`,
-      
-      // Pass the selected competitors so the dashboard knows which ones to show
       selectedCompetitors: selectedCompetitors,
       
       clientProfile: {
@@ -142,7 +156,6 @@ export default function ClientReport() {
         }
       },
       
-      // Only include the selected competitors in allCompetitors
       allCompetitors: selectedCompetitors.reduce((acc, competitor, index) => {
         acc[competitor] = {
           name: competitor,
@@ -205,7 +218,6 @@ export default function ClientReport() {
         return acc;
       }, {}),
       
-      // Mark this as a client report so the dashboard knows to hide admin features
       isClientReport: true
     };
   };
