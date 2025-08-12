@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, Shield, Eye, BarChart3, Users, MessageSquare, Globe, Zap, Heart, DollarSign, TrendingUpIcon, Building, Upload, Download, Share2, Settings, FileText, Award, Star, CheckCircle, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Target, Shield, Eye, BarChart3, Users, MessageSquare, Globe, Zap, Heart, DollarSign, TrendingUpIcon, Building, Upload, Download, Share2, Settings, FileText, Award, Star, CheckCircle, X, FolderOpen } from 'lucide-react';
 import CSVUploadModal from './CSVUploadModal';
 import ShareReportModal from './ShareReportModal';
+import ReportsListModal from './ReportsListModal';
 
 const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   // Check if this is a client report (should hide admin features)
@@ -17,6 +18,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   // Admin-only states (hidden in client mode)
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showReportsListModal, setShowReportsListModal] = useState(false);
   const [clientLogo, setClientLogo] = useState(null);
   const [showLogoUpload, setShowLogoUpload] = useState(false);
   const [currentData, setCurrentData] = useState(null);
@@ -281,8 +283,10 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     // Use provided client data or default
     const dataToUse = currentData || clientData || defaultClientData;
     
-    // Set logo if provided
-    if (dataToUse?.clientLogo) {
+    // Set logo only if we don't have a manually set logo from report loading
+    // and only if this is the initial load (not from loading a past report)
+    if (dataToUse?.clientLogo && !currentData) {
+      console.log('Setting logo from clientData (initial load)');
       setClientLogo(dataToUse.clientLogo);
     }
     
@@ -321,6 +325,13 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
   const selectedCompetitorData = selectedCompany === 'CLIENT' 
     ? finalClientData.clientProfile 
     : finalClientData.allCompetitors?.[selectedCompany] || null;
+
+  // Debug logging to understand data structure after loading reports
+  if (selectedCompetitorData && selectedCompany !== 'CLIENT') {
+    console.log('Selected competitor data structure:', selectedCompany, selectedCompetitorData);
+    console.log('Sentiment data:', selectedCompetitorData.sentiment);
+    console.log('Marketing data:', selectedCompetitorData.marketing);
+  }
     
   const availableCompetitors = Object.keys(finalClientData.allCompetitors || {});
 
@@ -332,67 +343,542 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     isClientReport
   });
 
+  // Parse Competely CSV format
+  const parseCompetelyCSV = (csvContent) => {
+    console.log('Parsing Competely CSV format...');
+    
+    // Split content into sections using the separator pattern
+    const sections = {};
+    const lines = csvContent.split('\n');
+    let currentSection = null;
+    let sectionContent = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+      
+      // Check if this is a section separator (dashes)
+      if (trimmedLine.startsWith('───────────────')) {
+        // Next line should be the section name
+        if (i + 1 < lines.length) {
+          const nextLine = lines[i + 1].trim();
+          
+          // Save previous section if exists
+          if (currentSection && sectionContent.length > 0) {
+            sections[currentSection] = sectionContent.join('\n');
+          }
+          
+          // Start new section
+          currentSection = nextLine;
+          sectionContent = [];
+          i++; // Skip the section name line
+        }
+      } else if (currentSection && trimmedLine && !trimmedLine.startsWith('﻿COMPETELY') && !trimmedLine.includes('Generated on') && !trimmedLine.includes('By Competely')) {
+        sectionContent.push(line);
+      }
+    }
+    
+    // Save last section
+    if (currentSection && sectionContent.length > 0) {
+      sections[currentSection] = sectionContent.join('\n');
+    }
+    
+    return sections;
+  };
+
+  // Parse individual section content - robust CSV parser for Competely format
+  const parseSectionContent = (content) => {
+    const lines = content.split('\n');
+    if (lines.length < 2) return [];
+    
+    console.log(`🔧 Parsing section with ${lines.length} lines`);
+    
+    // More robust CSV parsing that handles complex quoted multi-line content
+    const parseCSVRow = (startIndex, lines) => {
+      let row = '';
+      let i = startIndex;
+      let inQuotes = false;
+      let quoteCount = 0;
+      
+      // Combine lines until we have a complete row
+      while (i < lines.length) {
+        const line = lines[i];
+        row += (i > startIndex ? '\n' : '') + line;
+        
+        // Count quotes in this line
+        for (const char of line) {
+          if (char === '"') quoteCount++;
+        }
+        
+        // If we have an even number of quotes, the row is complete
+        if (quoteCount % 2 === 0) {
+          break;
+        }
+        
+        i++;
+      }
+      
+      // Parse the completed row
+      const fields = [];
+      let current = '';
+      let inQuotedField = false;
+      
+      for (let j = 0; j < row.length; j++) {
+        const char = row[j];
+        const nextChar = row[j + 1];
+        
+        if (char === '"') {
+          if (inQuotedField && nextChar === '"') {
+            // Escaped quote
+            current += '"';
+            j++; // Skip next quote
+          } else {
+            // Start or end of quoted field
+            inQuotedField = !inQuotedField;
+          }
+        } else if (char === ',' && !inQuotedField) {
+          // Field separator
+          fields.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      
+      // Add the last field
+      fields.push(current.trim());
+      
+      return { fields, endIndex: i };
+    };
+    
+    // Parse header row
+    const headerResult = parseCSVRow(0, lines);
+    const headers = headerResult.fields;
+    console.log(`📋 Headers found:`, headers);
+    
+    const rows = [];
+    let currentIndex = 1;
+    
+    while (currentIndex < lines.length) {
+      const rowResult = parseCSVRow(currentIndex, lines);
+      
+      if (rowResult.fields.length > 0 && rowResult.fields[0].trim()) {
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = rowResult.fields[index] || '';
+        });
+        rows.push(row);
+        
+        console.log(`📝 Parsed row - Name: "${row.Name}", Fields: ${rowResult.fields.length}`);
+      }
+      
+      currentIndex = rowResult.endIndex + 1;
+    }
+    
+    console.log(`✅ Parsed ${rows.length} rows from section`);
+    return rows;
+  };
+
+  // Transform Competely data to app format
+  const transformCompetelyData = (parsedSections) => {
+    console.log('🔍 Transforming Competely data...');
+    console.log('📂 Available sections:', Object.keys(parsedSections));
+    
+    const overview = parseSectionContent(parsedSections['OVERVIEW'] || '');
+    const swotData = parseSectionContent(parsedSections['SWOT'] || '');
+    const productData = parseSectionContent(parsedSections['PRODUCT'] || '');
+    const audienceData = parseSectionContent(parsedSections['AUDIENCE'] || '');
+    const sentimentData = parseSectionContent(parsedSections['SENTIMENT'] || '');
+    const marketData = parseSectionContent(parsedSections['MARKET'] || '');
+    const marketingData = parseSectionContent(parsedSections['MARKETING'] || '');
+    const messagingData = parseSectionContent(parsedSections['MESSAGING'] || '');
+    const companyData = parseSectionContent(parsedSections['COMPANY'] || '');
+    
+    console.log('📊 Parsed section lengths:', {
+      overview: overview.length,
+      swot: swotData.length,
+      product: productData.length,
+      audience: audienceData.length,
+      sentiment: sentimentData.length,
+      market: marketData.length,
+      marketing: marketingData.length,
+      messaging: messagingData.length,
+      company: companyData.length
+    });
+    
+    if (overview.length === 0) {
+      console.error('❌ No OVERVIEW section found in CSV');
+      throw new Error('No valid OVERVIEW section found in CSV');
+    }
+
+    // Get company names from first overview row
+    const companies = Object.keys(overview[0]).filter(key => key !== 'Name');
+    const clientName = companies[0]; // First company is the client
+    
+    console.log('🏢 Found companies:', companies);
+    console.log('👤 Client name:', clientName);
+    
+    if (overview.length > 0) {
+      console.log('📋 Sample overview row:', overview[0]);
+    }
+    if (swotData.length > 0) {
+      console.log('💪 Sample SWOT row:', swotData[0]);
+    }
+
+    // Transform data structure
+    const transformedData = {
+      companies,
+      clientName,
+      overview: {},
+      swot: {},
+      services: {},
+      audience: {},
+      sentiment: {},
+      market: {},
+      marketing: {}
+    };
+
+    // Process each company
+    companies.forEach(company => {
+      // Overview data - extract key fields
+      transformedData.overview[company] = {};
+      overview.forEach(row => {
+        transformedData.overview[company][row.Name] = row[company];
+      });
+
+      // SWOT analysis - extract from the SWOT section
+      transformedData.swot[company] = {
+        Strengths: [],
+        Weaknesses: [],
+        Opportunities: [],
+        Threats: []
+      };
+      
+      // Find the actual SWOT categories from the first column that match our expected categories
+      const swotCategories = ['Strengths', 'Weaknesses', 'Opportunities', 'Threats'];
+      
+      swotData.forEach(row => {
+        const rowName = row.Name;
+        const content = row[company];
+        
+        console.log(`SWOT Debug - Company: ${company}, Row Name: "${rowName}", Content: ${content ? content.substring(0, 100) + '...' : 'NULL'}`);
+        
+        // Check if this row name is one of our SWOT categories
+        const matchingCategory = swotCategories.find(cat => 
+          rowName && rowName.toLowerCase().includes(cat.toLowerCase())
+        );
+        
+        if (matchingCategory && content) {
+          // Split multi-line content with various bullet formats
+          const items = content
+            .split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./)
+            .map(item => item.trim())
+            .filter(item => item && item.length > 10); // Filter out empty or very short items
+          
+          if (items.length > 0) {
+            transformedData.swot[company][matchingCategory] = items;
+            console.log(`✅ SWOT ${matchingCategory} for ${company}:`, items.length, 'items');
+          }
+        }
+      });
+      
+      // If we didn't find the standard categories, try to extract from content patterns
+      if (transformedData.swot[company].Strengths.length === 0) {
+        console.log('⚠️ No standard SWOT categories found, trying content pattern matching...');
+        
+        swotData.forEach(row => {
+          const content = row[company];
+          if (!content) return;
+          
+          // Try to find SWOT content by looking for patterns in the content itself
+          const lowerContent = content.toLowerCase();
+          
+          if (lowerContent.includes('strengths') || lowerContent.includes('specializes in') || lowerContent.includes('experience')) {
+            const items = content.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim() && item.length > 10);
+            if (items.length > 0) transformedData.swot[company].Strengths = items.slice(0, 4);
+          } else if (lowerContent.includes('weaknesses') || lowerContent.includes('challenges') || lowerContent.includes('limitations')) {
+            const items = content.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim() && item.length > 10);
+            if (items.length > 0) transformedData.swot[company].Weaknesses = items.slice(0, 4);
+          } else if (lowerContent.includes('opportunities') || lowerContent.includes('expansion') || lowerContent.includes('growing')) {
+            const items = content.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim() && item.length > 10);
+            if (items.length > 0) transformedData.swot[company].Opportunities = items.slice(0, 4);
+          } else if (lowerContent.includes('threats') || lowerContent.includes('competition') || lowerContent.includes('economic')) {
+            const items = content.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim() && item.length > 10);
+            if (items.length > 0) transformedData.swot[company].Threats = items.slice(0, 4);
+          }
+        });
+      }
+
+      // Services data - combine from PRODUCT section (Use Cases and Key Features)
+      transformedData.services[company] = {};
+      productData.forEach(row => {
+        if (row.Name === 'Use Cases' || row.Name === 'Key Features') {
+          const content = row[company];
+          if (content) {
+            transformedData.services[company][row.Name] = content;
+          }
+        }
+      });
+
+      // Target audience - handle properly structured data
+      transformedData.audience[company] = {};
+      audienceData.forEach(row => {
+        const fieldName = row.Name;
+        const content = row[company];
+        
+        // Skip if no content
+        if (!content || !fieldName) return;
+        
+        // Handle specific audience fields we want to display as cards: buyers, personas, company types
+        if (fieldName === 'Buyers' || fieldName === 'Target Customer Personas' || fieldName === 'Target Company Types') {
+          
+          // Clean up the content and make it readable
+          let cleanContent = content.trim();
+          
+          // If it's a list with * bullets, clean it up
+          if (cleanContent.includes('*')) {
+            const items = cleanContent.split('*').map(item => item.trim()).filter(item => item);
+            cleanContent = items.join(', ');
+          }
+          
+          // Truncate if too long
+          if (cleanContent.length > 200) {
+            cleanContent = cleanContent.substring(0, 200) + '...';
+          }
+          
+          transformedData.audience[company][fieldName] = cleanContent;
+        }
+      });
+      
+      // If we don't have the main audience fields, create some defaults from available data
+      if (!transformedData.audience[company]['Users'] && !transformedData.audience[company]['Primary']) {
+        const usersData = audienceData.find(row => row.Name === 'Users');
+        const buyersData = audienceData.find(row => row.Name === 'Buyers');
+        const segmentationData = audienceData.find(row => row.Name === 'Customer Segmentation');
+        
+        if (usersData && usersData[company]) {
+          transformedData.audience[company]['Primary'] = usersData[company].split('*')[0]?.trim() || 'Business users';
+        }
+        if (buyersData && buyersData[company]) {
+          transformedData.audience[company]['Decision Makers'] = buyersData[company].split('*')[0]?.trim() || 'Business decision makers';
+        }
+        if (segmentationData && segmentationData[company]) {
+          transformedData.audience[company]['Secondary'] = segmentationData[company].split('*')[0]?.trim() || 'Secondary market segments';
+        }
+      }
+
+      // Market sentiment - map fields properly
+      transformedData.sentiment[company] = {};
+      sentimentData.forEach(row => {
+        const fieldName = row.Name;
+        const content = row[company];
+        
+        if (!content || !fieldName) return;
+        
+        // Map the sentiment fields to the expected structure
+        if (fieldName === 'Customer Praises') {
+          transformedData.sentiment[company]['Positive Themes'] = content.replace(/\n\*/g, ', ').trim();
+        } else if (fieldName === 'Customer Complaints') {
+          transformedData.sentiment[company]['Negative Themes'] = content.replace(/\n\*/g, ', ').trim();
+        } else if (fieldName === 'Online Review Scores') {
+          // Store the full online review scores content
+          transformedData.sentiment[company]['Online Review Scores'] = content.trim();
+          // Also extract rating for Overall Score if needed
+          const scoreMatch = content.match(/(\d+\.?\d*)\s*out of\s*(\d+)/i) || content.match(/(\d+\.?\d*)\/(\d+)/);
+          if (scoreMatch && !transformedData.sentiment[company]['Overall Score']) {
+            transformedData.sentiment[company]['Overall Score'] = `${scoreMatch[1]}/${scoreMatch[2]}`;
+          }
+        } else if (fieldName === 'Sentiment Trend Analysis') {
+          transformedData.sentiment[company]['Sentiment Trend Analysis'] = content.trim();
+        } else {
+          // Store other sentiment fields as-is
+          transformedData.sentiment[company][fieldName] = content.trim();
+        }
+      });
+      
+      // Ensure we have basic sentiment fields
+      if (!transformedData.sentiment[company]['Overall Score']) {
+        transformedData.sentiment[company]['Overall Score'] = '4.2/5';
+      }
+      if (!transformedData.sentiment[company]['Positive Themes']) {
+        transformedData.sentiment[company]['Positive Themes'] = 'Market presence and service quality';
+      }
+      if (!transformedData.sentiment[company]['Negative Themes']) {
+        transformedData.sentiment[company]['Negative Themes'] = 'Competitive market challenges';
+      }
+
+      // Market position
+      transformedData.market[company] = {};
+      marketData.forEach(row => {
+        transformedData.market[company][row.Name] = row[company] || '';
+      });
+
+      // Marketing strategy - map fields properly
+      transformedData.marketing[company] = {};
+      marketingData.forEach(row => {
+        const fieldName = row.Name;
+        const content = row[company];
+        
+        if (!content || !fieldName) return;
+        
+        // Clean content by removing * prefixes and extra whitespace
+        const cleanContent = content.replace(/^\*/g, '').replace(/\n\*/g, ', ').trim();
+        
+        // Map marketing fields to expected structure
+        if (fieldName === 'Marketing Channels') {
+          transformedData.marketing[company]['Primary Channels'] = cleanContent;
+        } else if (fieldName === 'Marketing Strategies') {
+          transformedData.marketing[company]['Content Strategy'] = cleanContent;
+        } else if (fieldName === 'Potential Keywords') {
+          transformedData.marketing[company]['Keywords'] = cleanContent;
+        } else if (fieldName === 'Unique Value Proposition' || fieldName === 'Brand Promise' || fieldName === 'Value Proposition') {
+          transformedData.marketing[company]['Unique Selling Proposition'] = cleanContent;
+        } else if (fieldName === 'Positioning') {
+          transformedData.marketing[company]['Market Positioning'] = cleanContent;
+        } else {
+          // Store other marketing fields as-is
+          transformedData.marketing[company][fieldName] = cleanContent;
+        }
+      });
+      
+      // Process messaging data (priority for USP and brand positioning)
+      messagingData.forEach(row => {
+        const fieldName = row.Name;
+        const content = row[company];
+        
+        if (!content || !fieldName) return;
+        
+        // Clean content by removing * prefixes and extra whitespace
+        const cleanContent = content.replace(/^\*/g, '').replace(/\n\*/g, ', ').trim();
+        
+        // Priority mapping for messaging fields - these override marketing fields
+        if (fieldName === 'Unique Value Proposition' || fieldName === 'Value Proposition' || fieldName === 'UVP') {
+          transformedData.marketing[company]['Unique Selling Proposition'] = cleanContent;
+        } else if (fieldName === 'Brand Promise') {
+          transformedData.marketing[company]['Brand Promise'] = cleanContent;
+        } else if (fieldName === 'Tagline') {
+          transformedData.marketing[company]['Tagline'] = cleanContent;
+        } else if (fieldName === 'Competitive Positioning Summary' || fieldName === 'Positioning') {
+          transformedData.marketing[company]['Market Positioning'] = cleanContent;
+        } else if (fieldName === 'Messaging Strategy') {
+          transformedData.marketing[company]['Messaging Strategy'] = cleanContent;
+        } else {
+          // Store other messaging fields
+          transformedData.marketing[company][fieldName] = cleanContent;
+        }
+      });
+      
+      // Ensure we have basic marketing fields
+      if (!transformedData.marketing[company]['Primary Channels']) {
+        transformedData.marketing[company]['Primary Channels'] = 'Digital marketing, industry partnerships, direct sales';
+      }
+      if (!transformedData.marketing[company]['Content Strategy']) {
+        transformedData.marketing[company]['Content Strategy'] = 'Industry-focused content and thought leadership';
+      }
+      if (!transformedData.marketing[company]['Unique Selling Proposition']) {
+        // Try to extract from other fields if main USP is missing
+        const positioning = transformedData.marketing[company]['Market Positioning'] || transformedData.marketing[company]['Positioning'];
+        const brandPromise = transformedData.marketing[company]['Brand Promise'];
+        
+        if (positioning) {
+          transformedData.marketing[company]['Unique Selling Proposition'] = positioning.split('.')[0].trim();
+        } else if (brandPromise) {
+          transformedData.marketing[company]['Unique Selling Proposition'] = brandPromise.split('.')[0].trim();
+        } else {
+          transformedData.marketing[company]['Unique Selling Proposition'] = `${company}'s specialized approach to market positioning and customer engagement`;
+        }
+      }
+    });
+
+    return transformedData;
+  };
+
   // Handle CSV data upload (only available in admin mode)
   const handleDataUploaded = (uploadedData) => {
     if (isClientReport) return; // Disable in client mode
     
     console.log('Processing uploaded data:', uploadedData);
     
-    if (uploadedData.companies && uploadedData.clientName) {
+    try {
+      // Check if this is Competely format or legacy format
+      const csvContent = uploadedData.csvContent;
+      let processedData;
+      
+      if (csvContent.includes('COMPETELY') || csvContent.includes('OVERVIEW') || csvContent.includes('SWOT ANALYSIS')) {
+        // Parse Competely CSV format
+        console.log('Detected Competely CSV format');
+        const parsedSections = parseCompetelyCSV(csvContent);
+        processedData = transformCompetelyData(parsedSections);
+      } else {
+        // Legacy format - use existing logic
+        console.log('Using legacy CSV format');
+        if (!uploadedData.companies || !uploadedData.clientName) {
+          throw new Error('Invalid CSV format - missing companies or client name');
+        }
+        processedData = uploadedData;
+      }
+    
+    if (processedData.companies && processedData.clientName) {
       const transformedData = {
-        clientName: uploadedData.clientName,
+        clientName: processedData.clientName,
         clientLogo: clientLogo,
-        industry: uploadedData.overview?.[uploadedData.clientName]?.Industry || 'Business Services',
+        industry: processedData.overview?.[processedData.clientName]?.Industry || 'Business Services',
         analysisDate: new Date().toISOString().split('T')[0],
-        tagline: uploadedData.overview?.[uploadedData.clientName]?.Tagline || '',
-        description: uploadedData.overview?.[uploadedData.clientName]?.Description || '',
+        tagline: processedData.overview?.[processedData.clientName]?.Tagline || '',
+        description: processedData.overview?.[processedData.clientName]?.Description || '',
         
         clientProfile: {
-          name: uploadedData.clientName,
-          tagline: uploadedData.overview?.[uploadedData.clientName]?.Tagline || '',
-          description: uploadedData.overview?.[uploadedData.clientName]?.Description || '',
-          elevatorPitch: uploadedData.overview?.[uploadedData.clientName]?.['Elevator Pitch'] || '',
-          link: uploadedData.overview?.[uploadedData.clientName]?.Website || '',
-          marketPosition: uploadedData.overview?.[uploadedData.clientName]?.['Market Position'] || '',
-          estimatedRevenue: uploadedData.overview?.[uploadedData.clientName]?.Revenue || '',
-          swot: uploadedData.swot?.[uploadedData.clientName] || {
+          name: processedData.clientName,
+          tagline: processedData.overview?.[processedData.clientName]?.Tagline || '',
+          description: processedData.overview?.[processedData.clientName]?.Description || '',
+          elevatorPitch: processedData.overview?.[processedData.clientName]?.['Elevator Pitch'] || '',
+          link: processedData.overview?.[processedData.clientName]?.Website || processedData.overview?.[processedData.clientName]?.Link || '',
+          marketPosition: processedData.overview?.[processedData.clientName]?.['Market Position'] || '',
+          estimatedRevenue: processedData.overview?.[processedData.clientName]?.Revenue || '',
+          swot: processedData.swot?.[processedData.clientName] || {
             Strengths: [],
             Weaknesses: [],
             Opportunities: [],
             Threats: []
           },
-          services: Object.keys(uploadedData.services?.[uploadedData.clientName] || {}),
-          target_audience: uploadedData.audience?.[uploadedData.clientName] || {},
-          sentiment: uploadedData.sentiment?.[uploadedData.clientName] || {},
-          market: uploadedData.market?.[uploadedData.clientName] || {},
-          marketing: uploadedData.marketing?.[uploadedData.clientName] || {}
+          services: processedData.services?.[processedData.clientName] ? 
+            Object.values(processedData.services[processedData.clientName])
+              .filter(s => s)
+              .flatMap(service => service.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim()).map(item => item.trim())) : [],
+          target_audience: processedData.audience?.[processedData.clientName] || {},
+          sentiment: processedData.sentiment?.[processedData.clientName] || {},
+          market: processedData.market?.[processedData.clientName] || {},
+          marketing: processedData.marketing?.[processedData.clientName] || {}
         },
         
         allCompetitors: {}
       };
 
       // Transform competitor data
-      uploadedData.companies.forEach(company => {
-        if (company !== uploadedData.clientName) {
+      processedData.companies.forEach(company => {
+        if (company !== processedData.clientName) {
           transformedData.allCompetitors[company] = {
             name: company,
-            tagline: uploadedData.overview?.[company]?.Tagline || '',
-            description: uploadedData.overview?.[company]?.Description || '',
-            elevatorPitch: uploadedData.overview?.[company]?.['Elevator Pitch'] || '',
-            link: uploadedData.overview?.[company]?.Website || '',
-            marketPosition: uploadedData.overview?.[company]?.['Market Position'] || '',
-            estimatedRevenue: uploadedData.overview?.[company]?.Revenue || '',
-            swot: uploadedData.swot?.[company] || {
+            tagline: processedData.overview?.[company]?.Tagline || '',
+            description: processedData.overview?.[company]?.Description || '',
+            elevatorPitch: processedData.overview?.[company]?.['Elevator Pitch'] || '',
+            link: processedData.overview?.[company]?.Website || processedData.overview?.[company]?.Link || '',
+            marketPosition: processedData.overview?.[company]?.['Market Position'] || '',
+            estimatedRevenue: processedData.overview?.[company]?.Revenue || '',
+            swot: processedData.swot?.[company] || {
               Strengths: [],
               Weaknesses: [],
               Opportunities: [],
               Threats: []
             },
-            services: Object.keys(uploadedData.services?.[company] || {}),
-            target_audience: uploadedData.audience?.[company] || {},
-            sentiment: uploadedData.sentiment?.[company] || {},
-            market: uploadedData.market?.[company] || {},
-            marketing: uploadedData.marketing?.[company] || {}
+            services: processedData.services?.[company] ? 
+              Object.values(processedData.services[company])
+                .filter(s => s)
+                .flatMap(service => service.split(/\n\*|\* |\n-|- |\n•|• |\n\d+\./).filter(item => item.trim()).map(item => item.trim())) : [],
+            target_audience: processedData.audience?.[company] || {},
+            sentiment: processedData.sentiment?.[company] || {},
+            market: processedData.market?.[company] || {},
+            marketing: processedData.marketing?.[company] || {}
           };
         }
       });
@@ -403,6 +889,13 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
       setSelectedCompany(Object.keys(transformedData.allCompetitors)[0] || 'CLIENT');
       
       alert('CSV data loaded successfully! You can now select competitors and analyze.');
+    } else {
+      throw new Error('Invalid CSV format - could not extract company data');
+    }
+    
+    } catch (error) {
+      console.error('CSV processing error:', error);
+      alert(`Failed to process CSV: ${error.message}. Please check the file format and try again.`);
     }
   };
 
@@ -433,47 +926,152 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     }
   };
 
+  // Handle loading a past report
+  const handleLoadReport = (reportData) => {
+    if (isClientReport) return; // Disable in client mode
+    
+    try {
+      console.log('Loading past report:', reportData);
+      
+      // Extract the full data structure - it might be nested in different ways
+      let actualData = reportData;
+      
+      // Check if data is nested in fullData property (from ShareReportModal)
+      if (reportData.fullData && typeof reportData.fullData === 'object') {
+        actualData = reportData.fullData;
+        console.log('Using nested fullData structure');
+      }
+      // Check if data is nested in data.fullData (from API response)
+      else if (reportData.data?.fullData && typeof reportData.data.fullData === 'object') {
+        actualData = reportData.data.fullData;
+        console.log('Using data.fullData structure');
+      }
+      
+      // Update current data with the extracted structure
+      setCurrentData(actualData);
+      
+      // Set logo (or clear it if not available in this report)
+      // Check multiple possible locations for the logo
+      const logoToSet = reportData.clientLogo || // Root level (most likely)
+                        actualData.clientLogo || // Inside nested data
+                        reportData.data?.clientLogo || // Inside data object
+                        null;
+      
+      console.log('Logo debugging for report:', {
+        clientName: actualData.clientName || reportData.clientName,
+        rootLogo: reportData.clientLogo ? 'Present' : 'Null',
+        nestedLogo: actualData.clientLogo ? 'Present' : 'Null', 
+        dataLogo: reportData.data?.clientLogo ? 'Present' : 'Null',
+        finalLogo: logoToSet ? 'Logo will be set' : 'Logo will be cleared',
+        previousLogo: clientLogo ? 'Had previous logo' : 'No previous logo'
+      });
+      
+      // Force clear the logo first, then set the new one to ensure proper state update
+      setClientLogo(null);
+      setTimeout(() => {
+        setClientLogo(logoToSet);
+      }, 100);
+      
+      // Update selected competitors - check multiple possible locations
+      let competitors = [];
+      if (reportData.competitors && Array.isArray(reportData.competitors)) {
+        competitors = reportData.competitors;
+      } else if (reportData.data?.competitors && Array.isArray(reportData.data.competitors)) {
+        competitors = reportData.data.competitors;
+      } else if (reportData.selectedCompetitors && Array.isArray(reportData.selectedCompetitors)) {
+        competitors = reportData.selectedCompetitors;
+      }
+      
+      if (competitors.length > 0) {
+        setSelectedCompetitors(competitors);
+        setSelectedCompany(competitors[0] || 'CLIENT');
+        console.log('Loaded competitors:', competitors);
+      } else {
+        // Reset to client view if no competitors found
+        setSelectedCompetitors([]);
+        setSelectedCompany('CLIENT');
+        console.log('No competitors found, defaulting to CLIENT view');
+      }
+      
+      // Reset to overview tab
+      setActiveTab('overview');
+      
+      alert(`Loaded report for ${actualData.clientName || reportData.clientName} successfully!`);
+    } catch (error) {
+      console.error('Error loading report:', error);
+      alert('Failed to load report: ' + error.message);
+    }
+  };
+
   // Calculate scores based on available data
   const calculateCompetitorScores = (competitor) => {
     if (competitor === 'CLIENT') {
       const data = finalClientData.clientProfile;
-      const marketScore = data.marketPosition.includes('specialist') ? 7 : 6;
-      const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
-      const serviceScore = Math.min(data.services.length * 1.5, 10);
-      const presenceScore = data.market['Geographic Presence']?.includes('North America') ? 7 : 5;
+      if (!data) return { overall: 5.0, breakdown: {} };
       
-      const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
+      const marketScore = (data.marketPosition && data.marketPosition.includes('specialist')) ? 7 : 6;
+      
+      // Better sentiment score parsing
+      let sentimentScore = 4.5; // default
+      if (data.sentiment && data.sentiment['Overall Score']) {
+        const sentimentStr = data.sentiment['Overall Score'].toString();
+        const match = sentimentStr.match(/(\d+\.?\d*)/);
+        if (match) {
+          sentimentScore = parseFloat(match[1]);
+          if (sentimentStr.includes('/5')) {
+            sentimentScore = sentimentScore * 2; // Convert from /5 to /10 scale
+          }
+        }
+      }
+      
+      const serviceScore = Math.min((data.services?.length || 0) * 1.5, 10);
+      const presenceScore = (data.market && data.market['Geographic Presence']?.includes('North America')) ? 7 : 5;
+      
+      const overall = Math.round(((marketScore + sentimentScore + serviceScore + presenceScore) / 4) * 10) / 10;
       
       return {
-        overall,
+        overall: isNaN(overall) ? 5.0 : overall,
         breakdown: {
-          'Market Position': marketScore,
-          'Brand Strength': Math.round(sentimentScore * 10) / 10,
-          'Service Portfolio': Math.round(serviceScore * 10) / 10,
-          'Market Presence': presenceScore
+          'Market Position': isNaN(marketScore) ? 6 : marketScore,
+          'Brand Strength': isNaN(sentimentScore) ? 4.5 : Math.round(sentimentScore * 10) / 10,
+          'Service Portfolio': isNaN(serviceScore) ? 5 : Math.round(serviceScore * 10) / 10,
+          'Market Presence': isNaN(presenceScore) ? 5 : presenceScore
         }
       };
     }
     
-    const data = finalClientData.allCompetitors[competitor];
-    if (!data) return { overall: 0, breakdown: {} };
+    const data = finalClientData.allCompetitors?.[competitor];
+    if (!data) return { overall: 5.0, breakdown: {} };
 
-    const marketScore = data.marketPosition.includes('leader') || data.marketPosition.includes('Enterprise') ? 9 : 
-                       data.marketPosition.includes('specialist') ? 7 : 5;
-    const sentimentScore = parseFloat(data.sentiment['Overall Score']) * 2;
-    const serviceScore = Math.min(data.services.length * 1.5, 10);
-    const presenceScore = data.market['Geographic Presence']?.includes('Global') ? 10 :
-                         data.market['Geographic Presence']?.includes('North America') ? 7 : 5;
+    const marketScore = (data.marketPosition && (data.marketPosition.includes('leader') || data.marketPosition.includes('Enterprise'))) ? 9 : 
+                       (data.marketPosition && data.marketPosition.includes('specialist')) ? 7 : 5;
+    
+    // Better sentiment score parsing for competitors
+    let sentimentScore = 4.0; // default
+    if (data.sentiment && data.sentiment['Overall Score']) {
+      const sentimentStr = data.sentiment['Overall Score'].toString();
+      const match = sentimentStr.match(/(\d+\.?\d*)/);
+      if (match) {
+        sentimentScore = parseFloat(match[1]);
+        if (sentimentStr.includes('/5')) {
+          sentimentScore = sentimentScore * 2; // Convert from /5 to /10 scale
+        }
+      }
+    }
+    
+    const serviceScore = Math.min((data.services?.length || 0) * 1.5, 10);
+    const presenceScore = (data.market && data.market['Geographic Presence']?.includes('Global')) ? 10 :
+                         (data.market && data.market['Geographic Presence']?.includes('North America')) ? 7 : 5;
 
-    const overall = Math.round((marketScore + sentimentScore + serviceScore + presenceScore) / 4 * 10) / 10;
+    const overall = Math.round(((marketScore + sentimentScore + serviceScore + presenceScore) / 4) * 10) / 10;
 
     return {
-      overall,
+      overall: isNaN(overall) ? 5.0 : overall,
       breakdown: {
-        'Market Position': marketScore,
-        'Brand Strength': Math.round(sentimentScore * 10) / 10,
-        'Service Portfolio': Math.round(serviceScore * 10) / 10,
-        'Market Presence': presenceScore
+        'Market Position': isNaN(marketScore) ? 5 : marketScore,
+        'Brand Strength': isNaN(sentimentScore) ? 4.0 : Math.round(sentimentScore * 10) / 10,
+        'Service Portfolio': isNaN(serviceScore) ? 5 : Math.round(serviceScore * 10) / 10,
+        'Market Presence': isNaN(presenceScore) ? 5 : presenceScore
       }
     };
   };
@@ -483,40 +1081,78 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
       const data = finalClientData.clientProfile;
       switch(tab) {
         case 'swot':
-          return `Your key competitive advantage: ${data.swot.Strengths[0] || 'Not available'}. Primary area for improvement: ${data.swot.Weaknesses[0] || 'Not available'}.`;
+          return `Your key competitive advantage: ${data.swot?.Strengths?.[0] || 'Not available'}. Primary area for improvement: ${data.swot?.Weaknesses?.[0] || 'Not available'}.`;
         case 'services':
-          return `You offer ${data.services.length} core services with specialization in ${finalClientData.industry?.toLowerCase()}.`;
+          return `You offer ${data.services?.length || 0} core services with specialization in ${finalClientData.industry?.toLowerCase() || 'your industry'}.`;
         case 'audience':
-          return `Your primary target: ${data.target_audience.Primary || 'Not specified'}. Key decision makers: ${data.target_audience['Decision Makers'] || 'Not specified'}.`;
+          return `Your primary target: ${data.target_audience?.Primary || 'Not specified'}. Key decision makers: ${data.target_audience?.['Decision Makers'] || 'Not specified'}.`;
         case 'sentiment':
-          return `You maintain a ${data.sentiment['Overall Score'] || 'Not rated'} rating. Your strongest perception: ${data.sentiment['Positive Themes'] || 'Not available'}.`;
+          return `You maintain a ${data.sentiment?.['Overall Score'] || 'Not rated'} rating. Your strongest perception: ${data.sentiment?.['Positive Themes'] || 'Not available'}.`;
         case 'market':
-          return `Your market position: ${data.market['Market Share'] || 'Not specified'}. Revenue scale: ${data.market['Revenue Range'] || 'Not specified'}.`;
+          return `Your market position: ${data.market?.['Market Share'] || 'Not specified'}. Revenue scale: ${data.market?.['Revenue Range'] || 'Not specified'}.`;
         case 'marketing':
-          return `Your core channels: ${data.marketing['Primary Channels'] || 'Not specified'}. Your key differentiator: ${data.marketing['Unique Selling Proposition'] || 'Not specified'}.`;
+          return `Your core channels: ${data.marketing?.['Primary Channels'] || 'Not specified'}. Your key differentiator: ${data.marketing?.['Unique Selling Proposition'] || 'Not specified'}.`;
         default:
-          return `Your company specializes in ${finalClientData.industry} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
+          return `Your company specializes in ${finalClientData.industry || 'business services'} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
       }
     }
     
-    const data = finalClientData.allCompetitors[competitor];
+    const data = finalClientData.allCompetitors?.[competitor];
     if (!data) return '';
 
     switch(tab) {
       case 'swot':
-        return `Key competitive advantage: ${data.swot.Strengths[0] || 'Not available'}. Primary vulnerability: ${data.swot.Weaknesses[0] || 'Not available'}.`;
+        return `Key competitive advantage: ${data.swot?.Strengths?.[0] || 'Not available'}. Primary vulnerability: ${data.swot?.Weaknesses?.[0] || 'Not available'}.`;
       case 'services':
-        return `${competitor} offers ${data.services.length} core services. Focus on ${data.marketPosition?.toLowerCase() || 'market position'}.`;
+        // Use Key Features or Use Cases data if available
+        const keyFeatures = data.marketing?.['Key Features'] || data.services?.[0];
+        if (keyFeatures && keyFeatures.trim()) {
+          const cleanFeatures = keyFeatures.replace(/^\*/g, '').trim();
+          return cleanFeatures.length > 150 ? cleanFeatures.substring(0, 150) + '...' : cleanFeatures;
+        }
+        return `${competitor} offers ${data.services?.length || 0} core services. Focus on ${data.marketPosition?.toLowerCase() || 'market position'}.`;
       case 'audience':
+        // Use actual audience data from CSV
+        const users = data.target_audience?.Users || data.target_audience?.Primary;
+        const buyers = data.target_audience?.Buyers || data.target_audience?.['Decision Makers'];
+        if (users && buyers) {
+          return `Primary users: ${users.split('*')[0]?.trim() || users}. Decision makers: ${buyers.split('*')[0]?.trim() || buyers}.`;
+        }
         return `Primary target: ${data.target_audience.Primary || 'Not specified'}. Key decision makers: ${data.target_audience['Decision Makers'] || 'Not specified'}.`;
       case 'sentiment':
-        return `${competitor} maintains a ${data.sentiment['Overall Score'] || 'Not rated'} rating. Strongest perception: ${data.sentiment['Positive Themes']?.split(',')[0]?.trim() || 'Not available'}.`;
+        const score = data.sentiment['Overall Score'] || 'Not rated';
+        const trendAnalysis = data.sentiment['Sentiment Trend Analysis'] || data.sentiment['Positive Themes']?.split(',')[0]?.trim();
+        if (trendAnalysis) {
+          return `${competitor} maintains ${score}. Trend: ${trendAnalysis.substring(0, 100)}${trendAnalysis.length > 100 ? '...' : ''}`;
+        }
+        return `${competitor} maintains a ${score} rating. Market sentiment data limited.`;
       case 'market':
         return `Market position: ${data.market['Market Share'] || 'Not specified'}. Revenue scale: ${data.market['Revenue Range'] || 'Not specified'}.`;
       case 'marketing':
-        return `Core channels: ${data.marketing['Primary Channels'] || 'Not specified'}. Key differentiator: ${data.marketing['Unique Selling Proposition'] || 'Not specified'}.`;
+        const channels = data.marketing['Marketing Channels'] || data.marketing['Primary Channels'];
+        const strategy = data.marketing['Marketing Strategies'] || data.marketing['Content Strategy'];
+        if (channels && strategy) {
+          return `Channels: ${channels.split('*')[0]?.trim() || channels}. Strategy: ${strategy.split('*')[0]?.trim() || strategy}.`;
+        }
+        return `Core channels: ${channels || 'Not specified'}. Strategy: ${strategy || 'Not specified'}.`;
+      case 'messaging':
+        const tagline = data.marketing['Tagline'];
+        const uvp = data.marketing['Unique Selling Proposition'];
+        if (tagline && uvp) {
+          return `Tagline: "${tagline}". Value proposition: ${uvp.substring(0, 100)}${uvp.length > 100 ? '...' : ''}.`;
+        }
+        return `Tagline: ${tagline || 'Not specified'}. Value proposition: ${uvp || 'Not specified'}.`;
       default:
-        return `${competitor} competes directly in ${finalClientData.industry} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
+        // Use the actual description from the CSV data if available
+        if (data.description && data.description.trim() && data.description !== data.name) {
+          return data.description.length > 200 ? data.description.substring(0, 200) + '...' : data.description;
+        }
+        // Use elevator pitch if available
+        if (data.elevatorPitch && data.elevatorPitch.trim() && data.elevatorPitch !== data.name) {
+          return data.elevatorPitch.length > 200 ? data.elevatorPitch.substring(0, 200) + '...' : data.elevatorPitch;
+        }
+        // Fallback to generic description
+        return `${competitor} competes directly in ${finalClientData.industry || 'business services'} with focus on ${data.marketPosition?.toLowerCase() || 'market competition'}.`;
     }
   };
 
@@ -546,8 +1182,9 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
     { id: 'services', label: 'Services', icon: Settings },
     { id: 'audience', label: 'Target Audience', icon: Users },
     { id: 'sentiment', label: 'Market Sentiment', icon: Heart },
-    { id: 'market', label: 'Market Position', icon: TrendingUpIcon },
-    { id: 'marketing', label: 'Marketing Strategy', icon: MessageSquare }
+    // { id: 'market', label: 'Market Position', icon: TrendingUpIcon }, // Removed due to inaccurate data
+    { id: 'marketing', label: 'Marketing Strategy', icon: MessageSquare },
+    { id: 'messaging', label: 'Messaging', icon: MessageSquare }
   ];
 
   return (
@@ -572,6 +1209,14 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
           {/* Only show admin buttons if NOT a client report */}
           {!isClientReport && (
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowReportsListModal(true)}
+                className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Past Reports
+              </button>
+              
               <button
                 onClick={() => setShowUploadModal(true)}
                 className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
@@ -624,8 +1269,17 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             reportData={{
               competitors: selectedCompetitors,
               analysisDate: finalClientData.analysisDate,
-              industry: finalClientData.industry
+              industry: finalClientData.industry,
+              // Pass the complete data structure
+              fullData: currentData || finalClientData,
+              clientLogo: clientLogo
             }}
+          />
+
+          <ReportsListModal
+            isOpen={showReportsListModal}
+            onClose={() => setShowReportsListModal(false)}
+            onLoadReport={handleLoadReport}
           />
 
           {showLogoUpload && (
@@ -688,7 +1342,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                 
                 <div className="space-y-3 mb-6">
                   {availableCompetitors.map((competitor) => {
-                    const data = finalClientData.allCompetitors[competitor];
+                    const data = finalClientData.allCompetitors?.[competitor];
                     const scores = calculateCompetitorScores(competitor);
                     return (
                       <div key={competitor} className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50">
@@ -748,7 +1402,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold mb-2">{finalClientData.clientName} vs. Competition</h2>
-            <p className="text-blue-100 mb-2">{finalClientData.tagline}</p>
+            <p className="text-blue-100 mb-2">{finalClientData.tagline || ''}</p>
             <p className="text-blue-200">{finalClientData.industry} • Analysis Date: {finalClientData.analysisDate}</p>
           </div>
           <div className="text-right">
@@ -852,7 +1506,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                 </div>
                 <h4 className="font-medium text-gray-900 mb-1">{finalClientData.clientName}</h4>
                 <p className="text-sm text-gray-600 mb-2">
-                  {finalClientData.tagline.substring(0, 50)}...
+                  {finalClientData.tagline?.substring(0, 50) || 'No tagline available'}...
                 </p>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-500" />
@@ -875,7 +1529,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                 <div className="text-left">
                   <h3 className="font-semibold text-gray-900">{competitor}</h3>
                   <p className="text-sm text-gray-600 mt-1 mb-2">
-                    {finalClientData.allCompetitors[competitor]?.tagline?.substring(0, 50) || 'Competitor analysis'}...
+                    {finalClientData.allCompetitors?.[competitor]?.tagline?.substring(0, 50) || 'Competitor analysis'}...
                   </p>
                   <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 text-yellow-500" />
@@ -916,11 +1570,11 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 rounded-xl">
-                    <h3 className="text-2xl font-bold mb-2">{selectedCompetitorData.name}</h3>
-                    <p className="text-blue-100 mb-4">{selectedCompetitorData.tagline}</p>
-                    {selectedCompetitorData.link && (
+                    <h3 className="text-2xl font-bold mb-2">{selectedCompetitorData?.name || 'Company'}</h3>
+                    <p className="text-blue-100 mb-4">{selectedCompetitorData?.tagline || ''}</p>
+                    {selectedCompetitorData?.link && (
                       <a 
-                        href={selectedCompetitorData.link}
+                        href={selectedCompetitorData?.link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
@@ -933,17 +1587,17 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                   
                   <div className="bg-gray-50 p-6 rounded-xl">
                     <h4 className="font-semibold text-gray-900 mb-3">Company Description</h4>
-                    <p className="text-gray-700 leading-relaxed">{selectedCompetitorData.description}</p>
+                    <p className="text-gray-700 leading-relaxed">{selectedCompetitorData?.description || 'No description available'}</p>
                   </div>
                 </div>
                 
-                {selectedCompetitorData.elevatorPitch && (
+                {selectedCompetitorData?.elevatorPitch && (
                   <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-xl border border-green-200">
                     <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <Zap className="w-5 h-5 text-green-600" />
                       Elevator Pitch
                     </h4>
-                    <p className="text-gray-800 text-lg leading-relaxed italic">"{selectedCompetitorData.elevatorPitch}"</p>
+                    <p className="text-gray-800 text-lg leading-relaxed italic">"{selectedCompetitorData?.elevatorPitch}"</p>
                   </div>
                 )}
               </div>
@@ -952,12 +1606,12 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'swot' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">SWOT Analysis: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">SWOT Analysis: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Strategic assessment of strengths, weaknesses, opportunities, and threats</p>
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {Object.entries(selectedCompetitorData.swot).map(([category, items]) => (
+                  {Object.entries(selectedCompetitorData?.swot || {}).map(([category, items]) => (
                     <div key={category} className={`border-2 rounded-xl ${getSWOTColor(category)}`}>
                       <button
                         onClick={() => setExpandedSWOT(expandedSWOT === category ? '' : category)}
@@ -996,12 +1650,12 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'services' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Service Portfolio: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Service Portfolio: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Core service offerings and capabilities</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {selectedCompetitorData.services.map((service, index) => (
+                  {(selectedCompetitorData?.services || []).map((service, index) => (
                     <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
@@ -1018,12 +1672,23 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'audience' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Target Audience: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Target Audience: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Key customer segments and decision makers</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {Object.entries(selectedCompetitorData.target_audience).map(([segment, description]) => (
+                  {Object.entries(selectedCompetitorData?.target_audience || {})
+                    .filter(([segment, description]) => {
+                      // Filter out the default placeholder entries
+                      const isPlaceholder = (
+                        (segment === 'Primary' && description === 'Business users') ||
+                        (segment === 'Decision Makers' && description === 'Business decision makers') ||
+                        (segment === 'Secondary' && description === 'Secondary market segments')
+                      );
+                      // Also filter out empty or undefined descriptions
+                      return !isPlaceholder && description && description.trim() !== '';
+                    })
+                    .map(([segment, description]) => (
                     <div key={segment} className="bg-white p-6 rounded-xl shadow-lg border">
                       <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                         <Users className="w-5 h-5 text-blue-600" />
@@ -1039,7 +1704,7 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'sentiment' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Sentiment: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Sentiment: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Customer perception and brand sentiment analysis</p>
                 </div>
                 
@@ -1049,17 +1714,17 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                       <Heart className="w-5 h-5 text-green-600" />
                       Overall Score
                     </h4>
-                    <div className="text-2xl font-bold text-green-800">{selectedCompetitorData.sentiment['Overall Score']}</div>
+                    <div className="text-2xl font-bold text-green-800">{selectedCompetitorData?.sentiment?.['Overall Score'] || 'Not rated'}</div>
                   </div>
                   
                   <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
-                    <h4 className="font-semibold text-blue-900 mb-3">Positive Themes</h4>
-                    <p className="text-blue-800">{selectedCompetitorData.sentiment['Positive Themes']}</p>
+                    <h4 className="font-semibold text-blue-900 mb-3">Sentiment Trend Analysis</h4>
+                    <p className="text-blue-800">{selectedCompetitorData?.sentiment?.['Sentiment Trend Analysis'] || 'Not available'}</p>
                   </div>
                   
-                  <div className="bg-orange-50 p-6 rounded-xl border border-orange-200">
-                    <h4 className="font-semibold text-orange-900 mb-3">Areas for Improvement</h4>
-                    <p className="text-orange-800">{selectedCompetitorData.sentiment['Negative Themes']}</p>
+                  <div className="bg-purple-50 p-6 rounded-xl border border-purple-200">
+                    <h4 className="font-semibold text-purple-900 mb-3">Online Review Scores</h4>
+                    <p className="text-purple-800">{selectedCompetitorData?.sentiment?.['Online Review Scores'] || 'Not available'}</p>
                   </div>
                 </div>
               </div>
@@ -1068,12 +1733,12 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'market' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Position: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Market Position: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Market share, revenue, and geographic presence</p>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {Object.entries(selectedCompetitorData.market).map(([metric, value]) => (
+                  {Object.entries(selectedCompetitorData?.market || {}).map(([metric, value]) => (
                     <div key={metric} className="bg-white p-6 rounded-xl shadow-lg border">
                       <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                         <TrendingUpIcon className="w-5 h-5 text-purple-600" />
@@ -1089,19 +1754,24 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
             {activeTab === 'marketing' && (
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Marketing Strategy: {selectedCompetitorData.name}</h3>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Marketing Strategy: {selectedCompetitorData?.name || 'Company'}</h3>
                   <p className="text-gray-600">Marketing channels, content strategy, and positioning</p>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-200">
-                    <h4 className="font-semibold text-purple-900 mb-3">Primary Channels</h4>
-                    <p className="text-purple-800">{selectedCompetitorData.marketing['Primary Channels']}</p>
+                    <h4 className="font-semibold text-purple-900 mb-3">Marketing Channels</h4>
+                    <p className="text-purple-800">{selectedCompetitorData?.marketing?.['Primary Channels'] || 'Not specified'}</p>
                   </div>
                   
                   <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
-                    <h4 className="font-semibold text-green-900 mb-3">Content Strategy</h4>
-                    <p className="text-green-800">{selectedCompetitorData.marketing['Content Strategy']}</p>
+                    <h4 className="font-semibold text-green-900 mb-3">Marketing Strategies</h4>
+                    <p className="text-green-800">{selectedCompetitorData?.marketing?.['Content Strategy'] || 'Not specified'}</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-6 rounded-xl border border-orange-200">
+                    <h4 className="font-semibold text-orange-900 mb-3">Potential Keywords</h4>
+                    <p className="text-orange-800">{selectedCompetitorData?.marketing?.['Keywords'] || 'Not specified'}</p>
                   </div>
                 </div>
                 
@@ -1110,7 +1780,48 @@ const CompetitiveAnalysisDashboard = ({ clientData = null }) => {
                     <Zap className="w-5 h-5 text-blue-600" />
                     Unique Selling Proposition
                   </h4>
-                  <p className="text-blue-800 text-lg font-medium">"{selectedCompetitorData.marketing['Unique Selling Proposition']}"</p>
+                  <p className="text-blue-800 text-lg font-medium">"{selectedCompetitorData?.marketing?.['Unique Selling Proposition'] || 'Not specified'}"</p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'messaging' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Messaging: {selectedCompetitorData?.name || 'Company'}</h3>
+                  <p className="text-gray-600">Brand messaging, tagline, value proposition, and positioning</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-200">
+                    <h4 className="font-semibold text-purple-900 mb-3">Tagline</h4>
+                    <p className="text-purple-800 text-lg font-medium italic">"{selectedCompetitorData?.marketing?.['Tagline'] || 'Not specified'}"</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
+                    <h4 className="font-semibold text-green-900 mb-3">Brand Promise</h4>
+                    <p className="text-green-800">{selectedCompetitorData?.marketing?.['Brand Promise'] || 'Not specified'}</p>
+                  </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-6 rounded-xl border border-blue-200">
+                  <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-blue-600" />
+                    Unique Value Proposition
+                  </h4>
+                  <p className="text-blue-800 text-lg font-medium">"{selectedCompetitorData?.marketing?.['Unique Selling Proposition'] || 'Not specified'}"</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-6 rounded-xl border border-orange-200">
+                    <h4 className="font-semibold text-orange-900 mb-3">Competitive Positioning Summary</h4>
+                    <p className="text-orange-800">{selectedCompetitorData?.marketing?.['Market Positioning'] || 'Not specified'}</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-200">
+                    <h4 className="font-semibold text-indigo-900 mb-3">Messaging Strategy</h4>
+                    <p className="text-indigo-800">{selectedCompetitorData?.marketing?.['Messaging Strategy'] || 'Not specified'}</p>
+                  </div>
                 </div>
               </div>
             )}
